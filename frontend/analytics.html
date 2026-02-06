@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.8/purify.min.js"></script>
+    <script src="js/security.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Intelligence - Police Intelligence System</title>
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Bootstrap -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <link href="css/styles.css" rel="stylesheet">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Vis.js for Network Visualization -->
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <!-- jsPDF for Report Generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+</head>
+
+<body>
+
+    <div class="d-flex">
+        <!-- Sidebar -->
+        <div class="sidebar d-flex flex-column">
+            <div class="brand-section">
+                <i class="bi bi-shield-shaded"></i>
+                <span>N.E.T.R.A.</span>
+            </div>
+
+            <div class="nav-list d-flex flex-column">
+                <a href="dashboard.html" class="nav-link">
+                    <i class="bi bi-briefcase"></i> Investigations
+                </a>
+                <a href="requests.html" class="nav-link">
+                    <i class="bi bi-telephone-inbound"></i> Telecom Requests
+                </a>
+                <a href="analytics.html" class="nav-link active">
+                    <i class="bi bi-graph-up-arrow"></i> Intel Analytics
+                </a>
+                <a href="tools.html" class="nav-link">
+                    <i class="bi bi-tools"></i> Cyber Tools
+                </a>
+                <a href="admin.html" class="nav-link">
+                    <i class="bi bi-shield-check"></i> Audit Logs
+                </a>
+            </div>
+
+            <div class="user-profile">
+                <div class="d-flex align-items-center justify-content-between">
+                    <div class="d-flex align-items-center">
+                        <div class="rounded-circle bg-white d-flex align-items-center justify-content-center text-primary me-2"
+                            style="width: 32px; height: 32px; font-size: 0.8rem;">
+                            <i class="bi bi-person-fill"></i>
+                        </div>
+                        <div style="line-height: 1.2;">
+                            <div class="small fw-semibold" style="font-size: 0.7rem; opacity: 0.8;" id="userRoleDisplay"></div>
+                            <strong id="userNameDisplay" class="text-white" style="font-size: 0.9rem;">Officer</strong>
+                        </div>
+                    </div>
+                    <a href="#" id="logoutBtn" class="text-white opacity-75" title="Secure Logout">
+                        <i class="bi bi-box-arrow-right"></i>
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content flex-grow-1 fade-in">
+            <div class="page-header">
+                <h1 class="page-title">Intelligence Analytics</h1>
+                <p class="page-subtitle">Financial fraud intelligence and cross-case pattern analysis.</p>
+            </div>
+
+            <!-- ADVANCED FILTERS & CONTROLS -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="card-custom">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <span><i class="bi bi-funnel-fill me-2"></i>Advanced Filters & Controls</span>
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-sm btn-outline-success" onclick="exportToPDF()">
+                                    <i class="bi bi-file-pdf"></i> Export PDF
+                                </button>
+                                <button class="btn btn-sm btn-outline-primary" onclick="exportToCSV()">
+                                    <i class="bi bi-file-earmark-spreadsheet"></i> Export CSV
+                                </button>
+                                <div class="form-check form-switch ms-3">
+                                    <input class="form-check-input" type="checkbox" id="autoRefreshToggle" checked>
+                                    <label class="form-check-label small" for="autoRefreshToggle">Auto-Refresh
+                                        (30s)</label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="row g-3">
+                                <!-- Date Range Filter -->
+                                <div class="col-md-3">
+                                    <label class="form-label small fw-bold">Date Range</label>
+                                    <select class="form-select form-select-sm" id="dateRangeFilter">
+                                        <option value="all">All Time</option>
+                                        <option value="7" selected>Last 7 Days</option>
+                                        <option value="30">Last 30 Days</option>
+                                        <option value="90">Last 90 Days</option>
+                                        <option value="custom">Custom Range</option>
+                                    </select>
+                                </div>
+
+                                <!-- Fraud Type Filter -->
+                                <div class="col-md-3">
+                                    <label class="form-label small fw-bold">Fraud Type</label>
+                                    <select class="form-select form-select-sm" id="fraudTypeFilter">
+                                        <option value="all" selected>All Types</option>
+                                        <option value="upi_fraud">UPI Fraud</option>
+                                        <option value="bank_transfer_fraud">Bank Transfer</option>
+                                        <option value="wallet_fraud">Wallet Fraud</option>
+                                        <option value="loan_app_scam">Loan App Scam</option>
+                                        <option value="investment_fraud">Investment Fraud</option>
+                                    </select>
+                                </div>
+
+                                <!-- Amount Range Filter -->
+                                <div class="col-md-3">
+                                    <label class="form-label small fw-bold">Amount Range (₹)</label>
+                                    <select class="form-select form-select-sm" id="amountRangeFilter">
+                                        <option value="all" selected>All Amounts</option>
+                                        <option value="0-10000">Under ₹10,000</option>
+                                        <option value="10000-50000">₹10K - ₹50K</option>
+                                        <option value="50000-100000">₹50K - ₹1L</option>
+                                        <option value="100000-500000">₹1L - ₹5L</option>
+                                        <option value="500000+">Above ₹5L</option>
+                                    </select>
+                                </div>
+
+                                <!-- Zone Filter -->
+                                <div class="col-md-3">
+                                    <label class="form-label small fw-bold">Zone/District</label>
+                                    <select class="form-select form-select-sm" id="zoneFilter">
+                                        <option value="all" selected>All Zones</option>
+                                        <option value="north">North Zone</option>
+                                        <option value="south">South Zone</option>
+                                        <option value="east">East Zone</option>
+                                        <option value="west">West Zone</option>
+                                        <option value="central">Central Zone</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <!-- Custom Date Range (Hidden by default) -->
+                            <div id="customDateRange" class="row g-3 mt-2" style="display: none;">
+                                <div class="col-md-6">
+                                    <label class="form-label small">From Date</label>
+                                    <input type="date" class="form-control form-control-sm" id="fromDate">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small">To Date</label>
+                                    <input type="date" class="form-control form-control-sm" id="toDate">
+                                </div>
+                            </div>
+
+                            <div class="mt-3">
+                                <button class="btn btn-primary btn-sm" onclick="applyFilters()">
+                                    <i class="bi bi-check-circle"></i> Apply Filters
+                                </button>
+                                <button class="btn btn-outline-secondary btn-sm ms-2" onclick="resetFilters()">
+                                    <i class="bi bi-x-circle"></i> Reset
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- FINANCIAL FRAUD MODULE: Dual Dashboard -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="card-custom">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <span><i class="bi bi-bar-chart-fill me-2"></i>Crime Analytics Dashboard</span>
+                            <button class="btn btn-sm btn-outline-primary" onclick="loadFinancialDashboard()">
+                                <i class="bi bi-arrow-clockwise"></i> Refresh
+                            </button>
+                        </div>
+                        <div class="card-body">
+                            <!-- Tabs -->
+                            <ul class="nav nav-tabs mb-4" id="dashboardTabs" role="tablist">
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link active" id="financial-tab" data-bs-toggle="tab"
+                                        data-bs-target="#financial" type="button">💰 Financial Fraud</button>
+                                </li>
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link" id="non-financial-tab" data-bs-toggle="tab"
+                                        data-bs-target="#non-financial" type="button">🔒 Non-Financial Cyber
+                                        Crime</button>
+                                </li>
+                            </ul>
+
+                            <!-- Tab Content -->
+                            <div class="tab-content" id="dashboardTabContent">
+                                <!-- Financial Fraud Dashboard -->
+                                <div class="tab-pane fade show active" id="financial" role="tabpanel">
+                                    <div class="row">
+                                        <div class="col-md-3">
+                                            <div class="card-custom p-3 mb-3" style="border-left: 4px solid #dc3545;">
+                                                <h6 class="text-muted small fw-bold">AMOUNT AT RISK</h6>
+                                                <h2 class="mb-0 fw-bold text-danger" id="amountAtRisk">₹0</h2>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <div class="card-custom p-3 mb-3" style="border-left: 4px solid #0d6efd;">
+                                                <h6 class="text-muted small fw-bold">BANK REQUESTS SENT</h6>
+                                                <h2 class="mb-0 fw-bold text-primary" id="bankRequestsSent">0</h2>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <div class="card-custom p-3 mb-3" style="border-left: 4px solid #198754;">
+                                                <h6 class="text-muted small fw-bold">FREEZE REQUESTS</h6>
+                                                <h2 class="mb-0 fw-bold text-success" id="freezeConfirmed">0 / <span
+                                                        id="freezeTotal">0</span></h2>
+                                                <small class="text-muted">Confirmed / Total</small>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <div class="card-custom p-3 mb-3" style="border-left: 4px solid #ffc107;">
+                                                <h6 class="text-muted small fw-bold">AVG RESPONSE TIME</h6>
+                                                <h2 class="mb-0 fw-bold text-warning" id="avgResponseTime">-</h2>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Fraud Type Breakdown -->
+                                    <div class="card-custom p-3">
+                                        <h6 class="fw-bold mb-3">Top Fraud Types</h6>
+                                        <div id="fraudTypeBreakdown">
+                                            <p class="text-muted">Loading fraud statistics...</p>
+                                        </div>
+                                    </div>
+
+                                    <!-- Repeat Entity Alerts -->
+                                    <div class="card-custom p-3 mt-3">
+                                        <h6 class="fw-bold mb-3"><i
+                                                class="bi bi-exclamation-triangle-fill text-danger"></i> Repeat Fraud
+                                            Entities</h6>
+                                        <div id="repeatEntitiesAlert">
+                                            <p class="text-muted">Loading repeat entity analysis...</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Non-Financial Cyber Crime Dashboard -->
+                                <div class="tab-pane fade" id="non-financial" role="tabpanel">
+                                    <div class="row">
+                                        <div class="col-md-4">
+                                            <div class="card-custom p-3 mb-3" style="border-left: 4px solid #6c757d;">
+                                                <h6 class="text-muted small fw-bold">VICTIM COUNT</h6>
+                                                <h2 class="mb-0 fw-bold text-secondary" id="victimCount">0</h2>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <div class="card-custom p-3 mb-3" style="border-left: 4px solid #0dcaf0;">
+                                                <h6 class="text-muted small fw-bold">ONLINE PRESENCE TRACED</h6>
+                                                <h2 class="mb-0 fw-bold text-info" id="onlinePresence">0</h2>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <div class="card-custom p-3 mb-3" style="border-left: 4px solid #198754;">
+                                                <h6 class="text-muted small fw-bold">CONTENT TAKEDOWN STATUS</h6>
+                                                <h2 class="mb-0 fw-bold text-success" id="contentTakedown">0</h2>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="alert alert-secondary">
+                                        <i class="bi bi-info-circle"></i> Non-financial cyber crime metrics are tracked
+                                        via telecom requests and evidence uploads.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row mb-4">
+                <!-- Enhanced Global Search -->
+                <div class="col-md-12 mb-4">
+                    <div class="card-custom"
+                        style="background: linear-gradient(135deg, var(--primary-color) 0%, #1565C0 100%); border: none; box-shadow: 0 4px 20px rgba(0,0,0,0.15);">
+                        <div class="card-body p-4 text-white">
+                            <h4 class="fw-bold mb-2"><i class="bi bi-search"></i> Universal Intelligence Search</h4>
+                            <p class="opacity-75 small mb-3">Search across all cases using text input or upload files
+                                (PDF/Excel/CSV) for batch analysis.</p>
+
+                            <!-- Search Mode Tabs -->
+                            <ul class="nav nav-pills mb-3" role="tablist">
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link active" id="text-search-tab" data-bs-toggle="pill"
+                                        data-bs-target="#textSearch" type="button">
+                                        <i class="bi bi-search"></i> Text Search
+                                    </button>
+                                </li>
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link" id="file-search-tab" data-bs-toggle="pill"
+                                        data-bs-target="#fileSearch" type="button">
+                                        <i class="bi bi-file-earmark-arrow-up"></i> File Upload
+                                    </button>
+                                </li>
+                            </ul>
+
+                            <div class="tab-content">
+                                <!-- Text Search Tab -->
+                                <div class="tab-pane fade show active" id="textSearch">
+                                    <form id="globalSearchForm">
+                                        <div class="row g-3">
+                                            <div class="col-md-3">
+                                                <select class="form-select form-select-lg" id="searchType"
+                                                    onchange="updateSearchPlaceholder()">
+                                                    <option value="auto">🔍 Auto-Detect</option>
+                                                    <option value="mobile">📱 Mobile Number</option>
+                                                    <option value="upi">💸 UPI ID</option>
+                                                    <option value="account">🏦 Bank Account</option>
+                                                    <option value="name">👤 Name</option>
+                                                    <option value="fir">📋 FIR Number</option>
+                                                </select>
+                                            </div>
+                                            <div class="col-md-7">
+                                                <input type="text" id="searchQuery" class="form-control form-control-lg"
+                                                    placeholder="Enter any identifier" required>
+                                            </div>
+                                            <div class="col-md-2">
+                                                <button type="submit" class="btn btn-accent btn-lg w-100 fw-bold">
+                                                    <i class="bi bi-search"></i> SEARCH
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <!-- One-Click Investigation Report -->
+                                        <div class="row g-2 mt-2">
+                                            <div class="col-md-6">
+                                                <button type="button" class="btn btn-warning w-100 fw-bold"
+                                                    onclick="getComprehensiveReport(event)">
+                                                    <i class="bi bi-file-earmark-text-fill"></i> GET COMPLETE REPORT
+                                                </button>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <button type="button" class="btn btn-info w-100 fw-bold text-white"
+                                                    onclick="visualizeNetwork(event)">
+                                                    <i class="bi bi-diagram-3-fill"></i> VISUALIZE NETWORK
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <small class="text-white-50 d-block mt-2 text-center">
+                                            One-click access: Reports, Evidence Links, and Visual Connection Maps.
+                                        </small>
+                                    </form>
+                                </div>
+                                <!-- Network Graph Display (Hidden by default) -->
+                                <div id="networkGraphSection" class="mt-4 d-none">
+                                    <div class="card bg-white text-dark shadow-sm">
+                                        <div
+                                            class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                                            <span><i class="bi bi-diagram-3 me-2"></i> Intelligence Network Map</span>
+                                            <button class="btn btn-sm btn-outline-light"
+                                                onclick="document.getElementById('networkGraphSection').classList.add('d-none')">
+                                                <i class="bi bi-x-lg"></i>
+                                            </button>
+                                        </div>
+                                        <div class="card-body p-0">
+                                            <div id="networkMapCanvas" style="height: 500px; background: #f8f9fa;">
+                                            </div>
+                                            <div
+                                                class="p-2 border-top d-flex gap-3 justify-content-center small bg-light">
+                                                <span><span class="badge rounded-pill"
+                                                        style="background: #4CAF50;">●</span> Case</span>
+                                                <span><span class="badge rounded-pill"
+                                                        style="background: #FF9800;">●</span> Mobile</span>
+                                                <span><span class="badge rounded-pill"
+                                                        style="background: #f44336;">●</span> Bank/UPI</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- File Upload Search Tab -->
+                                <div class="tab-pane fade" id="fileSearch">
+                                    <div class="alert alert-info mb-3">
+                                        <small><i class="bi bi-info-circle"></i> Upload files containing suspect data
+                                            for batch intelligence analysis</small>
+                                    </div>
+                                    <form id="fileSearchForm">
+                                        <div class="row g-3">
+                                            <div class="col-md-8">
+                                                <input type="file" class="form-control form-control-lg" id="searchFile"
+                                                    accept=".xlsx,.xls,.csv,.pdf" required>
+                                            </div>
+                                            <div class="col-md-4">
+                                                <button type="submit" class="btn btn-accent btn-lg w-100 fw-bold">
+                                                    <i class="bi bi-cloud-upload"></i> ANALYZE
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <small class="text-white opacity-75 d-block mt-2">
+                                            Supported: Excel (.xlsx, .xls), CSV (.csv), PDF (.pdf)
+                                        </small>
+                                    </form>
+                                </div>
+                            </div>
+
+
+
+                            <!-- Search Results -->
+                            <div id="searchResults" class="mt-4"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-8 mx-auto">
+                    <div class="card-custom" style="border-top: 4px solid var(--primary-color);">
+                        <div class="card-body">
+                            <h6 class="fw-bold mb-3 text-dark"><i class="bi bi-cpu"></i> Analysis Engine Configuration
+                            </h6>
+                            <form id="analysisForm" class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label">Investigation Unit (Case)</label>
+                                    <select class="form-select" id="caseSelect" required>
+                                        <option value="">Select FIR...</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Processing Source (Evidence)</label>
+                                    <select class="form-select" id="evidenceSelect" required disabled>
+                                        <option value="">Awaiting Case Selection...</option>
+                                    </select>
+                                </div>
+                                <div class="col-12 text-end">
+                                    <button type="submit" class="btn btn-primary px-4 fw-bold">
+                                        <i class="bi bi-play-fill"></i> GENERATE ANALYTICAL REPORT
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="alertPlaceholder"></div>
+
+            <!-- Analysis Results -->
+            <div id="resultsSection" class="d-none">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h4 class="mb-0 fw-bold text-primary">Intelligence Processing Summary</h4>
+                    <button class="btn btn-outline-secondary btn-sm" onclick="window.print()">
+                        <i class="bi bi-printer"></i> PRINT OFFICIAL COPY
+                    </button>
+                </div>
+
+                <!-- KPIs -->
+                <div class="row mb-4">
+                    <div class="col-md-6 col-lg-3">
+                        <div class="card-custom p-3" style="border-left: 4px solid var(--primary-color);">
+                            <h6 class="text-muted small fw-bold">TOTAL INTERACTIONS</h6>
+                            <h2 class="mb-0 fw-bold" id="totalCalls">-</h2>
+                        </div>
+                    </div>
+                    <div class="col-md-6 col-lg-3">
+                        <div class="card-custom p-3" style="border-left: 4px solid var(--accent-color);">
+                            <h6 class="text-muted small fw-bold">CUMULATIVE DURATION</h6>
+                            <h2 class="mb-0 fw-bold"><span id="totalDuration">-</span> <small
+                                    class="fs-6 text-muted">min</small></h2>
+                        </div>
+                    </div>
+                    <div class="col-md-6 col-lg-3">
+                        <div class="card-custom p-3" style="border-left: 4px solid var(--success-color);">
+                            <h6 class="text-muted small fw-bold">PEAK ACTIVITY HOUR</h6>
+                            <h2 class="mb-0 fw-bold" id="activeHour">-</h2>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Charts -->
+                <div class="row">
+                    <div class="col-lg-6 mb-4">
+                        <div class="card-custom h-100">
+                            <div class="card-header fw-bold">
+                                <i class="bi bi-telephone-outbound me-2"></i>Primary Outgoing Targets
+                            </div>
+                            <div class="card-body">
+                                <canvas id="outgoingChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-6 mb-4">
+                        <div class="card-custom h-100">
+                            <div class="card-header fw-bold">
+                                <i class="bi bi-clock-history me-2"></i>Temporal Activity Distribution
+                            </div>
+                            <div class="card-body">
+                                <canvas id="hourlyChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="row">
+        <div class="col-lg-6 mb-4">
+            <div class="card card-custom h-100">
+                <div class="card-header fw-bold">
+                    <i class="bi bi-telephone-outbound"></i> Top 10 Outgoing Contacts
+                </div>
+                <div class="card-body">
+                    <canvas id="outgoingChart"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6 mb-4">
+            <div class="card card-custom h-100">
+                <div class="card-header fw-bold">
+                    <i class="bi bi-clock-history"></i> Hourly Activity Pattern
+                </div>
+                <div class="card-body">
+                    <canvas id="hourlyChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    </div>
+    </div>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/analytics.js"></script>
+    <script src="js/analytics-enhancements.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+
+</html>

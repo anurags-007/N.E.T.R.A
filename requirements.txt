@@ -1,0 +1,17 @@
+fastapi
+uvicorn
+sqlalchemy
+pydantic[email]
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart
+reportlab
+pandas
+matplotlib
+openpyxl
+cryptography
+email-validator
+python-dotenv
+slowapi
+bleach
+requests

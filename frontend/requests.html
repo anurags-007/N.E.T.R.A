@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.8/purify.min.js"></script>
+    <script src="js/security.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Requests - Police Intelligence System</title>
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Bootstrap -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <link href="css/styles.css" rel="stylesheet">
+</head>
+
+<body>
+
+    <div class="d-flex">
+        <!-- Sidebar -->
+        <div class="sidebar d-flex flex-column">
+            <div class="brand-section">
+                <i class="bi bi-shield-shaded"></i>
+                <span>N.E.T.R.A.</span>
+            </div>
+
+            <div class="nav-list d-flex flex-column">
+                <a href="dashboard.html" class="nav-link">
+                    <i class="bi bi-briefcase"></i> Investigations
+                </a>
+                <a href="requests.html" class="nav-link active">
+                    <i class="bi bi-telephone-inbound"></i> Telecom Requests
+                </a>
+                <a href="analytics.html" class="nav-link">
+                    <i class="bi bi-graph-up-arrow"></i> Intel Analytics
+                </a>
+                <a href="tools.html" class="nav-link">
+                    <i class="bi bi-tools"></i> Cyber Tools
+                </a>
+                <a href="admin.html" class="nav-link">
+                    <i class="bi bi-shield-check"></i> Audit Logs
+                </a>
+            </div>
+
+            <div class="user-profile">
+                <div class="d-flex align-items-center justify-content-between">
+                    <div class="d-flex align-items-center">
+                        <div class="rounded-circle bg-white d-flex align-items-center justify-content-center text-primary me-2"
+                            style="width: 32px; height: 32px; font-size: 0.8rem;">
+                            <i class="bi bi-person-fill"></i>
+                        </div>
+                        <div style="line-height: 1.2;">
+                            <div class="small fw-semibold" style="font-size: 0.7rem; opacity: 0.8;"
+                                id="userRoleDisplay"></div>
+                            <strong id="userNameDisplay" class="text-white" style="font-size: 0.9rem;"></strong>
+                        </div>
+                    </div>
+                    <a href="#" id="logoutBtn" class="text-white opacity-75" title="Secure Logout">
+                        <i class="bi bi-box-arrow-right"></i>
+                    </a>
+                </div>
+            </div>
+
+            <div class="sidebar-footer mt-auto">
+                <div class="mb-1"><strong>N.E.T.R.A. Portal</strong></div>
+                <div class="mb-1"><strong>N.E.T.R.A. Portal</strong></div>
+                <div class="d-flex justify-content-between align-items-center">
+                    <span>© 2026</span>
+                    <button class="btn btn-sm btn-outline-light border-0" id="darkModeToggle" title="Toggle Dark Mode">
+                        <i class="bi bi-moon-stars"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content flex-grow-1 fade-in">
+            <div class="page-header d-flex justify-content-between align-items-center">
+                <div class="d-flex align-items-center gap-3">
+                    <button class="mobile-nav-toggle" id="sidebarToggle">
+                        <i class="bi bi-list"></i>
+                    </button>
+                    <div>
+                        <h1 class="page-title">CDR & CAF Requests</h1>
+                        <p class="page-subtitle">Manage official requests sent to Telecom Service Providers.</p>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-primary d-flex align-items-center gap-2" data-bs-toggle="modal"
+                    data-bs-target="#newRequestModal">
+                    <i class="bi bi-plus-lg"></i> GENERATE NEW REQUEST
+                </button>
+            </div>
+
+            <div id="alertPlaceholder"></div>
+
+            <!-- Stats -->
+            <div class="row mb-4">
+                <div class="col-md-3">
+                    <div class="card card-custom p-3" style="border-left: 4px solid var(--warning-color);">
+                        <h6 class="text-muted small fw-bold mb-1">AWAITING REVIEW</h6>
+                        <h3 class="mb-0 fw-bold" id="pendingCount">-</h3>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Requests Table -->
+            <div class="card-custom">
+                <div class="card-header">
+                    <span><i class="bi bi-list-check me-2"></i>Official Request Log</span>
+                </div>
+
+                <!-- Search & Filter Bar -->
+                <div class="card-body border-bottom bg-light">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <div class="input-group">
+                                <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                                <input type="text" class="form-control" id="requestSearchInput"
+                                    placeholder="Search by Request ID, Case, or Mobile..." onkeyup="filterRequests()">
+                            </div>
+                        </div>
+                        <div class="col-md-2">
+                            <select class="form-select" id="requestStatusFilter" onchange="filterRequests()">
+                                <option value="">All Status</option>
+                                <option value="pending">Pending</option>
+                                <option value="approved">Approved</option>
+                                <option value="rejected">Rejected</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <select class="form-select" id="requestTypeFilter" onchange="filterRequests()">
+                                <option value="">All Types</option>
+                                <option value="CDR">CDR</option>
+                                <option value="CAF">CAF</option>
+                                <option value="IP_LOGS">IP Logs</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <select class="form-select" id="requestSortBy" onchange="filterRequests()">
+                                <option value="date_desc">Latest First</option>
+                                <option value="date_asc">Oldest First</option>
+                                <option value="id_asc">ID (Low-High)</option>
+                                <option value="id_desc">ID (High-Low)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <button class="btn btn-outline-secondary w-100" onclick="clearRequestFilters()">
+                                <i class="bi bi-x-circle"></i> Clear
+                            </button>
+                        </div>
+                    </div>
+                    <div class="mt-2">
+                        <small class="text-muted">
+                            Showing <strong id="requestResultCount">0</strong> of <strong
+                                id="requestTotalCount">0</strong> requests
+                        </small>
+                    </div>
+                </div>
+
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th class="ps-4">Request ID</th>
+                                    <th>Linked Case</th>
+                                    <th>Target Number</th>
+                                    <th>Request Type</th>
+                                    <th>Status</th>
+                                    <th>Notes/Reason</th>
+                                    <th class="pe-4">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="requestsTableBody">
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- New Request Modal -->
+    <div class="modal fade" id="newRequestModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Generate Official Telecom Request</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <form id="newRequestForm">
+                        <div class="mb-3">
+                            <label class="form-label">Linked Investigation (Case)</label>
+                            <select class="form-select" id="caseSelect" name="case_id" required>
+                                <!-- Populated -->
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Target Mobile Number(s)</label>
+                            <textarea class="form-control" name="mobile_number"
+                                placeholder="Enter multiple numbers separated by commas or new lines&#10;Ex: 9988776655, 8877665544"
+                                rows="3" required></textarea>
+                            <div class="form-text small opacity-75">System will auto-detect TSP and group requests.
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Information Required</label>
+                            <select class="form-select" name="request_type">
+                                <option value="CDR">CDR (Call Detail Record)</option>
+                                <option value="CAF">CAF (Customer Application Form)</option>
+                                <option value="IP_LOGS">IP Logs / Tower Dump</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label font-monospace small text-primary fw-bold">Legal Ground /
+                                Section</label>
+                            <select class="form-select" id="legalPreset">
+                                <option value="">-- Select Legal Basis --</option>
+                                <option value="BNSS_94">Section 94 BNSS (Request for Document/Device)</option>
+                                <option value="CRPC_91">Section 91 CrPC (Production of Documents)</option>
+                                <option value="CRPC_102">Section 102 CrPC (Power to Seize Property)</option>
+                                <option value="EMERGENCY">Life Threatening Emergency (Ex-Post Facto)</option>
+                                <option value="OTHER">Other / Case Specific</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label font-monospace small text-primary fw-bold">Detailed
+                                Justification</label>
+                            <textarea class="form-control" name="reason" id="legalReason" rows="3"
+                                placeholder="State the specific investigative purpose and relevance to the case..."
+                                required></textarea>
+                            <div class="form-text small opacity-75">Submit accurate details for legal compliance.</div>
+                        </div>
+                        <div class="mt-4">
+                            <button type="submit" class="btn btn-primary w-100">SUBMIT FOR REVIEW</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Review Modal -->
+    <div class="modal fade" id="reviewModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-warning">
+                    <h5 class="modal-title text-dark"><i class="bi bi-shield-check"></i> Administrative Review</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <p class="fs-6">Reviewing Request ID: <strong id="reviewRequestId"></strong></p>
+                    <p class="text-muted small">By approving this request, you authorize the retrieval of telecom data
+                        under official police capacity.</p>
+
+                    <div class="d-flex justify-content-between mt-4">
+                        <button class="btn btn-outline-danger px-4" onclick="promptReject()">REJECT</button>
+                        <button class="btn btn-success px-4" onclick="submitReview('approve')">APPROVE ONLY</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Enhanced Split-View Email Modal -->
+    <div class="modal fade" id="emailDraftModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered modal-xl">
+            <div class="modal-content border-0 shadow-lg" style="height: 90vh;">
+                <div class="modal-header bg-dark text-white">
+                    <h5 class="modal-title d-flex align-items-center gap-2">
+                        <i class="bi bi-send-check"></i> Official Dispatch Center
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-0">
+                    <div class="d-flex h-100">
+                        <!-- Left: Email Controls -->
+                        <div class="col-md-5 p-4 bg-light border-end d-flex flex-column h-100 overflow-auto">
+                            <div class="mb-4">
+                                <label class="form-label fw-bold small text-muted">1. SELECT NODAL OFFICER
+                                    (RECIPIENT)</label>
+                                <select class="form-select border-primary" id="emailTo">
+                                    <option value="nodal.officer@airtel.com">Airtel Regulatory Node</option>
+                                    <option value="disclosure.officer@jio.com">Jio Law Enforcement</option>
+                                    <option value="nodal@vodafoneidea.com">Vi Regulatory Affairs</option>
+                                    <option value="learequest@bsnl.co.in">BSNL LEA Wing</option>
+                                </select>
+                            </div>
+
+                            <div class="mb-4">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <label class="form-label fw-bold small text-muted m-0">2. EMAIL CONTENT</label>
+                                    <select class="form-select form-select-sm w-auto" id="emailTemplate"
+                                        onchange="applyTemplate()">
+                                        <option value="standard">Standard Request (~Section 91)</option>
+                                        <option value="urgent">Urgent / Life Threatening</option>
+                                        <option value="reminder">Follow-up Reminder</option>
+                                    </select>
+                                </div>
+
+                                <input type="text" class="form-control mb-2 fw-bold" id="emailSubject" readonly>
+                                <textarea class="form-control font-monospace" id="emailBody" rows="12"
+                                    style="font-size: 0.85rem; background: #fff;" readonly></textarea>
+                            </div>
+
+                            <div class="mt-auto">
+                                <div class="d-grid gap-2">
+                                    <a href="#" id="mailtoLink"
+                                        class="btn btn-primary btn-lg d-flex align-items-center justify-content-center gap-2"
+                                        onclick="setTimeout(() => enableMarkSent(), 2000)">
+                                        <i class="bi bi-envelope-forward-fill"></i> OPEN IN MAIL APP
+                                    </a>
+                                    <button class="btn btn-dark d-flex align-items-center justify-content-center gap-2"
+                                        onclick="copyEmailToClipboard()">
+                                        <i class="bi bi-clipboard"></i> COPY TO CLIPBOARD
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Right: PDF Preview -->
+                        <div class="col-md-7 p-0 bg-secondary d-flex flex-column">
+                            <div class="d-flex justify-content-between align-items-center p-2 bg-white border-bottom">
+                                <span class="small fw-bold text-muted"><i class="bi bi-file-earmark-pdf"></i> ATTACHMENT
+                                    PREVIEW</span>
+                                <div>
+                                    <span id="previewFilename"
+                                        class="badge bg-light text-dark font-monospace me-2 border">REQ_PREVIEW.pdf</span>
+                                    <button class="btn btn-sm btn-outline-primary" id="downloadReqBtn"><i
+                                            class="bi bi-download"></i> Download</button>
+                                </div>
+                            </div>
+                            <div class="flex-grow-1 position-relative">
+                                <iframe id="pdfPreviewFrame" src="" class="w-100 h-100 border-0"
+                                    title="PDF Preview"></iframe>
+                                <div id="pdfLoading"
+                                    class="position-absolute top-50 start-50 translate-middle text-white text-center d-none">
+                                    <div class="spinner-border mb-2"></div>
+                                    <div>Loading Secure Document...</div>
+                                </div>
+                            </div>
+
+                            <!-- Dispatch Confirmation -->
+                            <div class="p-3 bg-dark text-white border-top">
+                                <div class="d-flex align-items-center justify-content-between">
+                                    <div class="small opacity-75">
+                                        Action required: Open Mail App > Attach PDF > Send.<br>
+                                        Then confirm dispatch here.
+                                    </div>
+                                    <button id="markSentBtn" class="btn btn-success disabled"
+                                        onclick="markRequestAsSent()">
+                                        <i class="bi bi-check-circle-fill"></i> MARK AS SENT
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/request_filters.js"></script>
+    <script src="js/requests.js"></script>
+    <script>
+        // Service Worker Registration
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js');
+        }
+
+        // Mobile Sidebar Toggle
+        const sidebar = document.querySelector('.sidebar');
+        const toggleBtn = document.getElementById('sidebarToggle');
+
+        if (toggleBtn) {
+            toggleBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                sidebar.classList.toggle('active');
+            });
+
+            document.addEventListener('click', (e) => {
+                if (window.innerWidth <= 768 &&
+                    sidebar.classList.contains('active') &&
+                    !sidebar.contains(e.target) &&
+                    e.target !== toggleBtn) {
+                    sidebar.classList.remove('active');
+                }
+            });
+        }
+
+        // Dark Mode Toggle
+        const darkModeBtn = document.getElementById('darkModeToggle');
+        const body = document.body;
+
+        if (localStorage.getItem('theme') === 'dark') {
+            body.classList.add('dark-mode');
+            if (darkModeBtn) darkModeBtn.innerHTML = '<i class="bi bi-sun-fill"></i>';
+        }
+
+        if (darkModeBtn) {
+            darkModeBtn.addEventListener('click', () => {
+                body.classList.toggle('dark-mode');
+                const isDark = body.classList.contains('dark-mode');
+                localStorage.setItem('theme', isDark ? 'dark' : 'light');
+                darkModeBtn.innerHTML = isDark ? '<i class="bi bi-sun-fill"></i>' : '<i class="bi bi-moon-stars"></i>';
+            });
+        }
+    </script>
+    <!-- Add promptReject function directly or update requests.js -->
+    <script>
+        function promptReject() {
+            // Simple overlay for rejection logic, creates better UX than browser prompt
+            const reason = prompt("Enter Rejection Reason:");
+            if (reason) {
+                submitReview('reject', reason);
+            }
+        }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+
+</html>

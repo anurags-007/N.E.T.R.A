@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.8/purify.min.js"></script>
+    <script src="js/security.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - N.E.T.R.A. Intelligence</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Bootstrap -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <link href="css/styles.css" rel="stylesheet">
+</head>
+
+<body class="login-body">
+
+    <div class="login-container fade-in">
+        <div class="login-brand">
+            <i class="bi bi-shield-shaded"></i>
+            <div class="login-title">N.E.T.R.A.</div>
+            <div class="text-muted small fw-bold mt-1" style="letter-spacing: 0.1em;">POLICE INTELLIGENCE PORTAL</div>
+        </div>
+
+        <div id="alertPlaceholder"></div>
+
+        <form id="loginForm">
+            <div class="mb-4">
+                <label for="username" class="form-label">Police ID</label>
+                <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-person-badge"></i></span>
+                    <input type="text" class="form-control" id="username" placeholder="Enter Police ID" required>
+                </div>
+            </div>
+            <div class="mb-5">
+                <label for="password" class="form-label">PASSWORD</label>
+                <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-key"></i></span>
+                    <input type="password" class="form-control" id="password" placeholder="Enter Password" required>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary w-100 mb-3">SECURE LOGIN</button>
+        </form>
+
+        <div class="text-center">
+            <small class="text-muted"><i class="bi bi-shield-lock"></i> Restricted Internal System</small><br>
+            <small class="text-muted text-uppercase" style="font-size: 0.65rem;">Unauthorized access is strictly
+                prohibited under IT Act.</small>
+        </div>
+    </div>
+
+    <!-- Password Change Modal -->
+    <div class="modal fade" id="passwordChangeModal" data-bs-backdrop="static" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg">
+                <div class="modal-header bg-primary text-white border-0">
+                    <h5 class="modal-title"><i class="bi bi-shield-lock-fill"></i> Mandatory Password Change</h5>
+                </div>
+                <div class="modal-body p-4 bg-white">
+                    <p class="small text-muted mb-2">This is your first login. Please update your temporary password.
+                    </p>
+                    <form id="passwordChangeForm">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small">Current Password</label>
+                            <input type="password" class="form-control" id="oldPassword" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small">New Password</label>
+                            <input type="password" class="form-control" id="newPassword" placeholder="Min 4 characters"
+                                required>
+                        </div>
+                        <div class="mb-4">
+                            <label class="form-label fw-bold small">Confirm New Password</label>
+                            <input type="password" class="form-control" id="confirmPassword" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">UPDATE & PROCEED</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script>
+        let tempToken = null;
+
+        // Login Handler
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            try {
+                const data = await API.login(username, password);
+                tempToken = data.access_token;
+
+                if (data.is_first_login) {
+                    const modal = new bootstrap.Modal(document.getElementById('passwordChangeModal'));
+                    modal.show();
+                } else {
+                    localStorage.setItem('token', data.access_token);
+                    completeAuth(e.target);
+                }
+            } catch (err) {
+                showAlert('danger', 'Authentication Failed: ' + err.message);
+            }
+        });
+
+        // Password Change Handler
+        document.getElementById('passwordChangeForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const oldPass = document.getElementById('oldPassword').value;
+            const newPass = document.getElementById('newPassword').value;
+            const confirmPass = document.getElementById('confirmPassword').value;
+
+            if (newPass !== confirmPass) {
+                alert("Passwords do not match!");
+                return;
+            }
+
+            try {
+                await API.changePassword(tempToken, oldPass, newPass);
+                localStorage.setItem('token', tempToken);
+                bootstrap.Modal.getInstance(document.getElementById('passwordChangeModal')).hide();
+                showAlert('success', 'Security updated. Redirecting...');
+
+                setTimeout(() => {
+                    window.location.href = 'dashboard.html';
+                }, 1000);
+            } catch (err) {
+                alert("Update Failed: " + err.message);
+            }
+        });
+
+        function completeAuth(form) {
+            const btn = form.querySelector('button[type="submit"]');
+            btn.innerHTML = '<i class="bi bi-shield-check"></i> AUTHENTICATED';
+            btn.style.backgroundColor = 'var(--success-color)';
+            btn.style.borderColor = 'var(--success-color)';
+
+            setTimeout(() => {
+                window.location.href = 'dashboard.html';
+            }, 800);
+        }
+
+        function showAlert(type, msg) {
+            const icon = type === 'danger' ? 'bi-exclamation-octagon' : 'bi-check-circle';
+            document.getElementById('alertPlaceholder').innerHTML = `
+                <div class="alert alert-${type} alert-dismissible fade show d-flex align-items-center mb-4" role="alert">
+                    <i class="bi ${icon} me-2"></i>
+                    <div>${msg}</div>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            `;
+        }
+    </script>
+    <div class="footer mt-auto">
+        <p class="mb-0">© 2026 N.E.T.R.A. Police Intelligence Portal. All Rights Reserved.</p>
+        <small class="text-muted">Proprietary System of Indian Law Enforcement Agencies</small>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+
+</html>
