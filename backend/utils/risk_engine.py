@@ -26,10 +26,12 @@ def calculate_entity_risk(investigation_data):
     money_score = min(total_amount / 100000, 1.0) * 100
     
     # 3. Network/Connectivity Score (30%)
-    # - Measures how "connected" this entity is (number of evidences/requests)
+    # - Measures how connected this entity is across evidences, requisitions, financial entities, and timeline hops
     evidence_count = stats.get("total_evidence_files", 0)
     request_count = stats.get("total_telecom_requests", 0)
-    connections = evidence_count + request_count
+    financial_count = stats.get("total_financial_entities", len(financials))
+    timeline_count = stats.get("total_timeline_events", len(timeline))
+    connections = evidence_count + request_count + financial_count + timeline_count
     network_score = min(connections / 5, 1.0) * 100
     
     # --- FINAL WEIGHTED SCORE ---

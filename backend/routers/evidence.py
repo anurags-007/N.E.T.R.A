@@ -11,7 +11,7 @@ from backend.database import get_db
 from backend.routers.auth import get_current_active_user
 from backend.utils.evidence_analysis import process_file
 from backend.utils.rbac import authorize_case_access
-from backend.utils.validation import sanitize_filename
+from backend.utils.validation import sanitize_filename, validate_file_magic_and_zip
 
 router = APIRouter(prefix="/evidence", tags=["evidence"])
 
@@ -32,6 +32,8 @@ async def upload_evidence(
     authorize_case_access(case_id, current_user, db)
 
     raw_name = file.filename or "uploaded_evidence"
+    if ".." in raw_name or "/" in raw_name or "\\" in raw_name:
+        raise HTTPException(status_code=400, detail="Invalid filename path")
     ext = os.path.splitext(raw_name)[1].lower()
     if ext not in config.ALLOWED_EXTENSIONS:
         raise HTTPException(
@@ -45,6 +47,10 @@ async def upload_evidence(
             status_code=413,
             detail=f"File too large. Maximum size: {config.MAX_FILE_SIZE_MB}MB",
         )
+
+    is_safe, safety_err = validate_file_magic_and_zip(content, ext)
+    if not is_safe:
+        raise HTTPException(status_code=400, detail=safety_err)
 
     safe_name = sanitize_filename(raw_name)
     uid = uuid.uuid4().hex

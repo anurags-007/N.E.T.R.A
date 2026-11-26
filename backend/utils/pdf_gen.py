@@ -213,6 +213,59 @@ def generate_approved_request_pdf(
     return output_path
 
 
+def generate_freeze_order_pdf(
+    freeze_data: dict,
+    case_data: dict,
+    officer_name: str,
+    output_path: str,
+) -> str:
+    """Generate an urgent account attachment/freeze notice under Section 106 BNSS, 2023."""
+    c = canvas.Canvas(output_path, pagesize=letter)
+    width, height = letter
+
+    c.setFont("Helvetica-Bold", 15)
+    c.setFillColorRGB(0.75, 0.08, 0.08)
+    c.drawCentredString(width / 2, height - 45, "URGENT FREEZE / SEIZURE ORDER - SECTION 106 BNSS, 2023")
+    c.setFillColorRGB(0, 0, 0)
+
+    c.setFont("Helvetica", 11)
+    c.drawCentredString(width / 2, height - 65, f"{case_data['police_station']} | N.E.T.R.A. Financial Intelligence Unit")
+
+    c.setFont("Helvetica", 10)
+    c.drawString(50, height - 105, f"Date: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
+    c.drawString(350, height - 105, f"Ref: {str(case_data['fir_number'])[:28]}/FRZ/{freeze_data['id']}")
+
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(50, height - 140, "To, The Nodal Officer / Principal Officer,")
+    c.drawString(50, height - 156, f"{freeze_data['bank_name']}")
+
+    lines = [
+        f"Subject: Direction for Immediate Lien/Freeze under Section 106 of BNSS, 2023 (Urgency: {str(freeze_data['urgency_level']).upper()})",
+        "",
+        f"Whereas FIR No. {case_data['fir_number']} is registered at {case_data['police_station']} involving suspected cyber-enabled financial fraud;",
+        f"And whereas account/wallet identifier {freeze_data['account_number']} held with {freeze_data['bank_name']} is suspected to hold proceeds of crime;",
+        "",
+        "In exercise of powers under Section 106 of the Bharatiya Nagarik Suraksha Sanhita (BNSS), 2023, you are hereby directed to immediately mark debit-freeze / lien on the above account and furnish balance/KYC details to the undersigned.",
+        "",
+        f"Justification: {freeze_data['justification']}",
+    ]
+    text_y = _draw_wrapped_lines(c, lines, height - 190, width)
+
+    if text_y < 140:
+        c.showPage()
+        text_y = height - 60
+
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(380, text_y - 30, f"Issued By: {officer_name}")
+    c.drawString(380, text_y - 46, f"Station: {case_data['police_station']}")
+
+    c.setFont("Helvetica-Oblique", 8)
+    c.drawCentredString(width / 2, 30, "System-generated statutory notice under Section 106 BNSS, 2023. Strictly Confidential.")
+
+    c.save()
+    return output_path
+
+
 def generate_bsa_63_manifest(
     case_data: dict,
     evidence_records: list[dict],

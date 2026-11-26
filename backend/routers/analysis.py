@@ -181,6 +181,7 @@ def universal_search(
                 "match_type": match_field,
                 "matched_value": case.fir_number,
                 "case_type": case.case_type.value if case.case_type else "N/A",
+                "case_category": case.case_category.value if case.case_category else "N/A",
                 "status": case.status,
                 "police_station": case.police_station,
                 "created_at": case.created_at.isoformat() if case.created_at else None
@@ -387,6 +388,7 @@ def get_comprehensive_investigation_data(
                 "fir_number": case.fir_number,
                 "police_station": case.police_station,
                 "case_type": case.case_type.value if case.case_type else "N/A",
+                "case_category": case.case_category.value if case.case_category else "N/A",
                 "status": case.status,
                 "amount_involved": case.amount_involved,
                 "description": case.description,
@@ -446,69 +448,9 @@ def get_comprehensive_investigation_data(
         ))
     }
 
-    # --- RISK SCORING LOGIC ---
-    risk_score = 0
-    risk_breakdown = {
-        "repeat_offense_score": 0,
-        "money_flow_score": 0,
-        "network_score": 0
-    }
-    
-    # 1. Repeat Offense (Matches in multiple cases)
-    if len(case_ids) > 1:
-        risk_breakdown["repeat_offense_score"] = min(len(case_ids) * 20, 100) # Max 100 for 5+ cases
-        risk_score += risk_breakdown["repeat_offense_score"] * 0.4 # 40% weight
-    
-    # 2. Money Flow (High value transactions)
-    total_money = investigation_data["summary_stats"]["total_transaction_amount"]
-    if total_money > 1000000: # 10 Lakhs+
-        risk_breakdown["money_flow_score"] = 100
-    elif total_money > 100000: # 1 Lakh+
-        risk_breakdown["money_flow_score"] = 60
-    elif total_money > 10000: # 10k+
-        risk_breakdown["money_flow_score"] = 30
-    risk_score += risk_breakdown["money_flow_score"] * 0.3 # 30% weight
-    
-    # 3. Network Complexity (Connections to many entities)
-    network_connections = len(investigation_data["telecom_requests"]) + len(investigation_data["financial_entities"])
-    if network_connections > 10:
-        risk_breakdown["network_score"] = 100
-    elif network_connections > 5:
-        risk_breakdown["network_score"] = 60
-    else:
-        risk_breakdown["network_score"] = 20
-    risk_score += risk_breakdown["network_score"] * 0.3 # 30% weight
-    
-    # Finalize Risk Profile
-    final_score = int(min(risk_score, 99)) # Cap at 99
-    risk_level = "LOW"
-    risk_color = "success"
-    priority = "ROUTINE MONITORING"
-    
-    if final_score >= 80:
-        risk_level = "CRITICAL"
-        risk_color = "danger"
-        priority = "IMMEDIATE ACTION"
-    elif final_score >= 50:
-        risk_level = "HIGH"
-        risk_color = "warning"
-        priority = "PRIORITY INVESTIGATION"
-        
-    investigation_data["risk_profile"] = {
-        "score": final_score,
-        "level": risk_level,
-        "color": risk_color,
-        "priority": priority,
-        "breakdown": risk_breakdown,
-        "tags": [
-            "REPEAT OFFENDER" if len(case_ids) > 1 else None,
-            "HIGH VALUE TARGET" if total_money > 500000 else None,
-            "ACTIVE RECENTLY" # Placeholder
-        ]
-    }
-    # Clean up None tags
-    investigation_data["risk_profile"]["tags"] = [t for t in investigation_data["risk_profile"]["tags"] if t]
-    
+    # Delegate unified risk scoring to shared risk_engine (prevents score drift & handles tz-naive/aware dates)
+    investigation_data["risk_profile"] = risk_engine.calculate_entity_risk(investigation_data)
+
     return investigation_data
 
 
@@ -682,14 +624,14 @@ async def file_based_search(
         def _extract_identifiers() -> list[str]:
             extracted = []
             if file_extension in ['xlsx', 'xls', 'csv']:
-                import pandas as pd
-                if file_extension == 'csv':
-                    df = pd.read_csv(io.BytesIO(content))
-                else:
-                    df = pd.read_excel(io.BytesIO(content))
-                for col in df.columns:
-                    for value in df[col].dropna():
-                        if value:
+                from backend.utils.cdr_parser import _read_tabular_rows
+                headers, rows = _read_tabular_rows(content, file.filename or f"upload.{file_extension}")
+                for h in headers:
+                    if h:
+                        extracted.append(str(h).strip())
+                for row in rows:
+                    for value in row.values():
+                        if value is not None and str(value).strip():
                             extracted.append(str(value).strip())
             elif file_extension == 'pdf':
                 import PyPDF2

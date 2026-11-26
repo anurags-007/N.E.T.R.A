@@ -1,5 +1,7 @@
 from typing import List
+import os
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import func
 
@@ -8,7 +10,12 @@ from backend import models, schemas
 from backend.routers.auth import get_current_active_user
 from backend.nodal_contacts import get_bank_nodal_email
 from backend.utils.audit import record_audit_log
+from backend.utils.pdf_gen import generate_freeze_order_pdf
 from backend.utils.rbac import authorize_case_access, get_accessible_case_ids
+from backend.utils.validation import sanitize_filename
+
+FREEZE_PDF_DIR = "data/generated_requests"
+os.makedirs(FREEZE_PDF_DIR, exist_ok=True)
 
 router = APIRouter(
     prefix="/freeze",
@@ -58,6 +65,25 @@ def create_freeze_request(
     db.add(new_freeze)
     db.commit()
     db.refresh(new_freeze)
+
+    os.makedirs(FREEZE_PDF_DIR, exist_ok=True)
+    pdf_name = sanitize_filename(f"FREEZE_{new_freeze.id}_{request.account_number}.pdf")
+    pdf_path = os.path.join(FREEZE_PDF_DIR, pdf_name)
+    generate_freeze_order_pdf(
+        freeze_data={
+            "id": new_freeze.id,
+            "bank_name": request.bank_name,
+            "account_number": request.account_number,
+            "urgency_level": request.urgency_level,
+            "justification": request.justification,
+        },
+        case_data={"fir_number": case.fir_number, "police_station": case.police_station},
+        officer_name=current_user.username,
+        output_path=pdf_path,
+    )
+    new_freeze.request_file_path = pdf_path
+    db.commit()
+    db.refresh(new_freeze)
     
     # Log action (CRITICAL - Audit trail for legal proceedings)
     record_audit_log(
@@ -103,6 +129,29 @@ def get_freeze_request(
         raise HTTPException(status_code=404, detail="Freeze request not found")
     authorize_case_access(request.case_id, current_user, db)
     return request
+
+
+@router.get("/requests/{request_id}/download")
+def download_freeze_order_pdf(
+    request_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+):
+    """Download Section 106 BNSS freeze order PDF (jurisdiction-scoped)."""
+    freeze_req = db.query(models.FreezeRequest).filter(models.FreezeRequest.id == request_id).first()
+    if not freeze_req:
+        raise HTTPException(status_code=404, detail="Freeze request not found")
+    authorize_case_access(freeze_req.case_id, current_user, db)
+
+    file_path = freeze_req.request_file_path
+    if not file_path or not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Freeze order PDF not found")
+
+    return FileResponse(
+        file_path,
+        media_type="application/pdf",
+        filename=os.path.basename(file_path),
+    )
 
 @router.patch("/requests/{request_id}/status")
 def update_freeze_status(

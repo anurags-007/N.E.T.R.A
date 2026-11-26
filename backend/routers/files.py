@@ -54,8 +54,11 @@ async def upload_evidence(
     if current_user.role in [models.UserRole.CONSTABLE, models.UserRole.HEAD_CONSTABLE]:
         status = "pending" # Needs SHO approval
 
-    # Validate Extension
-    file_ext = os.path.splitext(file.filename)[1].lower()
+    # Validate Extension & reject path traversal sequences
+    raw_filename = file.filename or ""
+    if ".." in raw_filename or "/" in raw_filename or "\\" in raw_filename:
+        raise HTTPException(status_code=400, detail="Invalid filename path")
+    file_ext = os.path.splitext(raw_filename)[1].lower()
     if file_ext not in config.ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=400, 

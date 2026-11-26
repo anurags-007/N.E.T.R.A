@@ -282,6 +282,8 @@ async def upload_request_file(
     
     # Save the file safely inside REQUESTS_DIR
     raw_name = file.filename or ""
+    if ".." in raw_name or "/" in raw_name or "\\" in raw_name:
+        raise HTTPException(status_code=400, detail="Invalid filename path")
     ext = os.path.splitext(raw_name)[1].lower()
     if ext not in config.ALLOWED_EXTENSIONS:
         raise HTTPException(
