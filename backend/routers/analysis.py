@@ -458,6 +458,7 @@ def get_comprehensive_investigation_data(
 def get_network_graph(
     identifier: str = None,
     max_nodes: int = 250,
+    max_edges: int = 500,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user)
 ):
@@ -466,11 +467,13 @@ def get_network_graph(
     Builds a JSON of Nodes and Edges connecting Cases, Mobiles, and Accounts.
     """
     max_nodes = max(1, min(max_nodes, 250))
+    max_edges = max(1, min(max_edges, 1000))
     nodes = []
     edges = []
     node_ids = set()
     edge_keys = set()
     truncated = False
+    edges_truncated = False
 
     def add_node(id, label, type, color="#97C2FC", size=20):
         nonlocal truncated
@@ -491,8 +494,12 @@ def get_network_graph(
         return True
 
     def add_edge(from_node, to_node, label="", color="#848484"):
+        nonlocal edges_truncated
         key = tuple(sorted([str(from_node), str(to_node)]))
         if from_node in node_ids and to_node in node_ids and key not in edge_keys and from_node != to_node:
+            if len(edges) >= max_edges:
+                edges_truncated = True
+                return False
             edges.append({
                 "from": from_node,
                 "to": to_node,
@@ -501,6 +508,8 @@ def get_network_graph(
                 "arrows": "to"
             })
             edge_keys.add(key)
+            return True
+        return False
 
     # Initial search to find related cases (scoped to user's jurisdiction)
     found_case_ids = set()
@@ -509,7 +518,7 @@ def get_network_graph(
     if identifier:
         if accessible_case_ids is not None and not accessible_case_ids:
             add_node(f"SEARCH_{identifier}", identifier, "search", "#6c757d", 30)
-            return {"nodes": nodes, "edges": edges, "truncated": truncated}
+            return {"nodes": nodes, "edges": edges, "truncated": truncated, "edges_truncated": edges_truncated}
 
         # 1. Search Telecom Requests
         req_q = db.query(models.TelecomRequest).filter(models.TelecomRequest.mobile_number.ilike(f"%{identifier}%"))
@@ -540,7 +549,7 @@ def get_network_graph(
         # Just return the searched node itself if nothing found
         if identifier: 
             add_node(f"SEARCH_{identifier}", identifier, "search", "#6c757d", 30)
-        return {"nodes": nodes, "edges": edges, "truncated": truncated}
+        return {"nodes": nodes, "edges": edges, "truncated": truncated, "edges_truncated": edges_truncated}
 
     # --- EXPANSION LOGIC (batched to eliminate N+1 queries) ---
     all_cases = db.query(models.Case).filter(models.Case.id.in_(found_case_ids)).all()
@@ -592,7 +601,8 @@ def get_network_graph(
     return {
         "nodes": nodes,
         "edges": edges,
-        "truncated": truncated
+        "truncated": truncated,
+        "edges_truncated": edges_truncated
     }
 
 

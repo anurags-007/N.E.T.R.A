@@ -28,8 +28,19 @@ if not SECRET_KEY or (ENVIRONMENT == "production" and SECRET_KEY.strip() in _PLA
     SECRET_KEY = _DEFAULT_SECRET
     print("⚠️  WARNING: Using development SECRET_KEY. NEVER use in production!")
 
-ALGORITHM = "HS256"
+ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+JWT_PRIVATE_KEY = os.getenv("JWT_PRIVATE_KEY")
+JWT_PUBLIC_KEY = os.getenv("JWT_PUBLIC_KEY")
+if JWT_PRIVATE_KEY and JWT_PUBLIC_KEY:
+    ALGORITHM = "RS256"
+    JWT_SIGNING_KEY = JWT_PRIVATE_KEY
+    JWT_VERIFYING_KEY = JWT_PUBLIC_KEY
+else:
+    JWT_SIGNING_KEY = SECRET_KEY
+    JWT_VERIFYING_KEY = SECRET_KEY
+
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30))
+RISK_MONEY_THRESHOLD = float(os.getenv("RISK_MONEY_THRESHOLD", 100000.0))
 
 # Encryption - MultiFernet support via comma-separated ENCRYPTION_KEYS (first encrypts, all decrypt)
 _raw_encryption_keys = os.getenv("ENCRYPTION_KEYS") or os.getenv("ENCRYPTION_KEY") or ""

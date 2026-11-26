@@ -76,6 +76,11 @@ def favicon():
     return Response(status_code=204)
 
 
+@app.get("/health")
+def health_check():
+    return {"status": "ok", "environment": config.ENVIRONMENT}
+
+
 @app.get("/")
 def read_root():
     return {"message": "Police CAF/CDR Analysis System API is Online", "environment": config.ENVIRONMENT}

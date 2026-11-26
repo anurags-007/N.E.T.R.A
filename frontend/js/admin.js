@@ -78,21 +78,28 @@ async function loadLogs() {
         logs.forEach(log => {
             const tr = document.createElement('tr');
 
-            // Highlight critical actions
             let actionColor = 'text-dark';
             if (log.action === 'LOGIN') actionColor = 'text-success fw-bold';
             if (log.action === 'UPLOAD_EVIDENCE') actionColor = 'text-primary fw-bold';
             if (log.action.includes('REJECT')) actionColor = 'text-danger fw-bold';
 
-            tr.innerHTML = `
-                <td class="ps-4 text-muted small">${new Date(log.timestamp).toLocaleString()}</td>
-                <td class="fw-bold log-user"></td>
-                <td class="${actionColor} log-action"></td>
-                <td class="log-details"></td>
-            `;
-            tr.querySelector('.log-user').textContent = log.user;
-            tr.querySelector('.log-action').textContent = log.action;
-            tr.querySelector('.log-details').textContent = log.details || '-';
+            const tdTime = document.createElement('td');
+            tdTime.className = 'ps-4 text-muted small';
+            tdTime.textContent = new Date(log.timestamp).toLocaleString();
+
+            const tdUser = document.createElement('td');
+            tdUser.className = 'fw-bold log-user';
+            tdUser.textContent = log.user;
+
+            const tdAction = document.createElement('td');
+            tdAction.className = `${actionColor} log-action`;
+            tdAction.textContent = log.action;
+
+            const tdDetails = document.createElement('td');
+            tdDetails.className = 'log-details';
+            tdDetails.textContent = log.details || '-';
+
+            tr.append(tdTime, tdUser, tdAction, tdDetails);
             tbody.appendChild(tr);
         });
 
@@ -132,15 +139,30 @@ document.getElementById('registerOfficerForm').addEventListener('submit', async 
 
 function showAlert(type, msg) {
     const ph = document.getElementById('alertPlaceholder');
-    ph.innerHTML = `
-        <div class="alert alert-${escapeHtml(type)} alert-dismissible fade show shadow-sm" role="alert">
-            <i class="bi bi-info-circle-fill me-2"></i> <span class="alert-msg"></span>
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-    `;
-    ph.querySelector('.alert-msg').textContent = msg;
+    ph.replaceChildren();
+    const allowedTypes = new Set(['success', 'danger', 'warning', 'info']);
+    const safeType = allowedTypes.has(type) ? type : 'info';
+
+    const wrapper = document.createElement('div');
+    wrapper.className = `alert alert-${safeType} alert-dismissible fade show shadow-sm`;
+    wrapper.setAttribute('role', 'alert');
+
+    const icon = document.createElement('i');
+    icon.className = 'bi bi-info-circle-fill me-2';
+
+    const span = document.createElement('span');
+    span.className = 'alert-msg';
+    span.textContent = msg;
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn-close';
+    btn.setAttribute('data-bs-dismiss', 'alert');
+
+    wrapper.append(icon, span, btn);
+    ph.appendChild(wrapper);
     setTimeout(() => {
-        ph.innerHTML = '';
+        ph.replaceChildren();
     }, 5000);
 }
 

@@ -7,6 +7,8 @@ from passlib.context import CryptContext
 from backend import config
 
 SECRET_KEY = config.SECRET_KEY
+JWT_SIGNING_KEY = config.JWT_SIGNING_KEY
+JWT_VERIFYING_KEY = config.JWT_VERIFYING_KEY
 ALGORITHM = config.ALGORITHM
 ACCESS_TOKEN_EXPIRE_MINUTES = config.ACCESS_TOKEN_EXPIRE_MINUTES
 
@@ -32,4 +34,4 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
         "exp": expire,
         "jti": str(uuid.uuid4()),
     })
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return jwt.encode(to_encode, JWT_SIGNING_KEY, algorithm=ALGORITHM)

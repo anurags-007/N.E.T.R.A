@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from backend import config
 
 def calculate_entity_risk(investigation_data):
     """
@@ -21,9 +22,10 @@ def calculate_entity_risk(investigation_data):
     repeat_score = min(case_count / 5, 1.0) * 100
     
     # 2. Money Flow Score (30%)
-    # - Threshold: ₹1,00,000 (Generic threshold for high priority in local stations)
+    # - Threshold: configurable via RISK_MONEY_THRESHOLD (default ₹1,00,000)
     total_amount = stats.get("total_transaction_amount", 0.0)
-    money_score = min(total_amount / 100000, 1.0) * 100
+    money_threshold = max(1.0, config.RISK_MONEY_THRESHOLD)
+    money_score = min(total_amount / money_threshold, 1.0) * 100
     
     # 3. Network/Connectivity Score (30%)
     # - Measures how connected this entity is across evidences, requisitions, financial entities, and timeline hops

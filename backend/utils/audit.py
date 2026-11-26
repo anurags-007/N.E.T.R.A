@@ -1,5 +1,6 @@
 """Tamper-evident hash-chained AuditLog helpers."""
 import hashlib
+import threading
 from datetime import datetime, timezone
 from typing import Optional
 from sqlalchemy.orm import Session
@@ -7,6 +8,7 @@ from sqlalchemy.orm import Session
 from backend import models
 
 GENESIS_HASH = "0" * 64
+_AUDIT_CHAIN_LOCK = threading.Lock()
 
 
 def _compute_entry_hash(
@@ -28,24 +30,26 @@ def record_audit_log(
     commit: bool = False,
 ) -> models.AuditLog:
     """Append a hash-chained AuditLog entry linked to the previous entry's SHA-256."""
-    last = db.query(models.AuditLog).order_by(models.AuditLog.id.desc()).first()
-    prev_hash = last.entry_hash if (last and last.entry_hash) else GENESIS_HASH
-    ts = datetime.now(timezone.utc).replace(microsecond=0)
-    entry_hash = _compute_entry_hash(prev_hash, user_id, action, details, ts.isoformat())
+    with _AUDIT_CHAIN_LOCK:
+        last = db.query(models.AuditLog).order_by(models.AuditLog.id.desc()).first()
+        prev_hash = last.entry_hash if (last and last.entry_hash) else GENESIS_HASH
+        ts = datetime.now(timezone.utc).replace(microsecond=0)
+        entry_hash = _compute_entry_hash(prev_hash, user_id, action, details, ts.isoformat())
 
-    entry = models.AuditLog(
-        user_id=user_id,
-        action=action,
-        details=details,
-        timestamp=ts,
-        prev_hash=prev_hash,
-        entry_hash=entry_hash,
-    )
-    db.add(entry)
-    if commit:
-        db.commit()
-        db.refresh(entry)
-    return entry
+        entry = models.AuditLog(
+            user_id=user_id,
+            action=action,
+            details=details,
+            timestamp=ts,
+            prev_hash=prev_hash,
+            entry_hash=entry_hash,
+        )
+        db.add(entry)
+        db.flush()
+        if commit:
+            db.commit()
+            db.refresh(entry)
+        return entry
 
 
 def verify_audit_chain(db: Session) -> dict:

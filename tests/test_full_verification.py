@@ -469,3 +469,58 @@ def test_audit_log_hash_chain_endpoint_and_tamper(isolated_env):
     assert tamper_resp.status_code == 200
     assert tamper_resp.json()["valid"] is False
     assert tamper_resp.json()["broken_id"] == e1.id
+
+
+def test_health_refresh_blocklist_prune_and_edge_cap(isolated_env):
+    from datetime import datetime, timedelta, timezone
+
+    client, SessionLocal, _ = isolated_env
+    data = _seed_demo_hierarchy(SessionLocal)
+
+    # 1. Health endpoint
+    health = client.get("/health")
+    assert health.status_code == 200
+    assert health.json()["status"] == "ok"
+
+    # 2. Seed an expired TokenBlocklist entry and verify /auth/refresh prunes it + rotates jti
+    db = SessionLocal()
+    try:
+        db.add(models.TokenBlocklist(
+            jti="expired-jti-0001",
+            expires_at=datetime.now(timezone.utc) - timedelta(hours=2),
+        ))
+        db.commit()
+    finally:
+        db.close()
+
+    old_headers = _jwt_headers(data["si_sec62"])
+    ref_resp = client.post("/auth/refresh", headers=old_headers)
+    assert ref_resp.status_code == 200
+    new_token = ref_resp.json()["access_token"]
+    new_headers = {"Authorization": f"Bearer {new_token}"}
+
+    # Old token is now revoked; new token works
+    assert client.get("/auth/me", headers=old_headers).status_code == 401
+    assert client.get("/auth/me", headers=new_headers).status_code == 200
+
+    # Expired entry was pruned
+    db = SessionLocal()
+    try:
+        assert db.query(models.TokenBlocklist).filter(models.TokenBlocklist.jti == "expired-jti-0001").first() is None
+    finally:
+        db.close()
+
+    # 3. Network graph edge cap
+    c101 = data["case_101"].id
+    for num in ("9876543210", "9876543211", "9876543212"):
+        r = client.post(
+            f"/requests/?case_id={c101}",
+            headers=new_headers,
+            json={"mobile_number": num, "request_type": "CDR", "reason": "Edge cap test"},
+        )
+        assert r.status_code == 200
+    g_resp = client.get("/analysis/network-graph?identifier=FIR/GBN/2026/101&max_edges=1", headers=new_headers)
+    assert g_resp.status_code == 200
+    g_json = g_resp.json()
+    assert len(g_json["edges"]) <= 1
+    assert g_json["edges_truncated"] is True

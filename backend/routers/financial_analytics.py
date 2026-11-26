@@ -225,10 +225,13 @@ def get_repeat_fraud_entities(
 
     case_map = {}
     if all_case_ids:
-        case_map = {
-            c.id: c.fir_number
-            for c in db.query(models.Case).filter(models.Case.id.in_(all_case_ids)).all()
-        }
+        from backend.utils.rbac import apply_jurisdiction_filter
+        scoped_cases = apply_jurisdiction_filter(
+            db.query(models.Case).filter(models.Case.id.in_(all_case_ids)),
+            current_user,
+            models.Case,
+        ).all()
+        case_map = {c.id: c.fir_number for c in scoped_cases}
 
     for acc, bank, count in repeat_accounts:
         entities = acc_entities_by_acc.get(acc, [])

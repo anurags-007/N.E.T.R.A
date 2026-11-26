@@ -18,6 +18,15 @@ router = APIRouter(
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token")
 
+def _prune_expired_blocklist(db: Session) -> None:
+    """Remove expired JWT jti entries so TokenBlocklist stays bounded."""
+    now = datetime.now(timezone.utc)
+    db.query(models.TokenBlocklist).filter(
+        models.TokenBlocklist.expires_at.isnot(None),
+        models.TokenBlocklist.expires_at < now,
+    ).delete(synchronize_session=False)
+
+
 async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -25,7 +34,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        payload = jwt.decode(token, security.SECRET_KEY, algorithms=[security.ALGORITHM])
+        payload = jwt.decode(token, security.JWT_VERIFYING_KEY, algorithms=[security.ALGORITHM])
         username: str = payload.get("sub")
         jti: str = payload.get("jti")
         if username is None:
@@ -174,6 +183,46 @@ async def change_password(
     return {"message": "Password updated successfully"}
 
 
+@router.post("/refresh", response_model=schemas.Token)
+def refresh_access_token(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+):
+    """Rotate the active JWT: revoke the current jti and issue a fresh token."""
+    try:
+        payload = jwt.decode(token, security.JWT_VERIFYING_KEY, algorithms=[security.ALGORITHM])
+    except JWTError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+    old_jti = payload.get("jti")
+    exp_ts = payload.get("exp")
+    expires_at = datetime.fromtimestamp(exp_ts, tz=timezone.utc) if exp_ts else None
+
+    _prune_expired_blocklist(db)
+    if old_jti:
+        exists = db.query(models.TokenBlocklist.id).filter(models.TokenBlocklist.jti == old_jti).first()
+        if not exists:
+            db.add(models.TokenBlocklist(jti=old_jti, expires_at=expires_at))
+
+    access_token_expires = timedelta(minutes=security.ACCESS_TOKEN_EXPIRE_MINUTES)
+    token_data = {
+        "sub": current_user.username,
+        "role": current_user.role.value,
+        "rank": current_user.rank,
+        "station": current_user.station_name,
+        "district": current_user.district_name,
+        "zone": current_user.zone_name,
+    }
+    new_token = security.create_access_token(data=token_data, expires_delta=access_token_expires)
+    db.commit()
+    return {
+        "access_token": new_token,
+        "token_type": "bearer",
+        "is_first_login": current_user.is_first_login,
+    }
+
+
 @router.post("/logout")
 def logout_current_token(
     token: str = Depends(oauth2_scheme),
@@ -182,7 +231,7 @@ def logout_current_token(
 ):
     """Revoke the active JWT (jti) server-side upon logout."""
     try:
-        payload = jwt.decode(token, security.SECRET_KEY, algorithms=[security.ALGORITHM])
+        payload = jwt.decode(token, security.JWT_VERIFYING_KEY, algorithms=[security.ALGORITHM])
     except JWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
@@ -190,6 +239,7 @@ def logout_current_token(
     exp_ts = payload.get("exp")
     expires_at = datetime.fromtimestamp(exp_ts, tz=timezone.utc) if exp_ts else None
 
+    _prune_expired_blocklist(db)
     if jti:
         exists = db.query(models.TokenBlocklist.id).filter(models.TokenBlocklist.jti == jti).first()
         if not exists:

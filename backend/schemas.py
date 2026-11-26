@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
 from typing import Optional, List
 from datetime import datetime
 from backend.models import (
@@ -33,8 +33,7 @@ class UserResponse(UserBase):
     is_first_login: bool
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 # Token Schemas
 class Token(BaseModel):
@@ -68,8 +67,7 @@ class CaseResponse(CaseBase):
     owner_id: int
     owner: UserResponse
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 # Request Schemas
 class RequestBase(BaseModel):
@@ -116,8 +114,7 @@ class RequestResponse(RequestBase):
     request_file_path: Optional[str] = None
     result_file_path: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 # Evidence Schemas
 class EvidenceResponse(BaseModel):
@@ -127,8 +124,7 @@ class EvidenceResponse(BaseModel):
     uploaded_at: datetime
     file_hash: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 # ========== FINANCIAL FRAUD MODULE SCHEMAS ==========
 
@@ -154,8 +150,7 @@ class FinancialEntityResponse(FinancialEntityBase):
     created_at: datetime
     verification_status: str
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 # Transaction Timeline Schemas
 class TransactionEventBase(BaseModel):
@@ -173,8 +168,7 @@ class TransactionEventResponse(TransactionEventBase):
     case_id: int
     created_at: datetime
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 # Bank Request Schemas
 class BankRequestBase(BaseModel):
@@ -197,8 +191,7 @@ class BankRequestResponse(BankRequestBase):
     reviewer_id: Optional[int] = None
     request_file_path: Optional[str] = None
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 # NPCI Request Schemas  
 class NPCIRequestBase(BaseModel):
@@ -219,8 +212,7 @@ class NPCIRequestResponse(NPCIRequestBase):
     reviewer_id: Optional[int] = None
     request_file_path: Optional[str] = None
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 # Freeze Request Schemas
 class FreezeRequestBase(BaseModel):
@@ -243,5 +235,4 @@ class FreezeRequestResponse(FreezeRequestBase):
     bank_reference_number: Optional[str] = None
     request_file_path: Optional[str] = None
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

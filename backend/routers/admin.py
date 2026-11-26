@@ -14,7 +14,7 @@ router = APIRouter(
 )
 
 # Response Schema for Logs (Create locally since it's admin specific)
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 class AuditLogOut(BaseModel):
     id: int
@@ -23,8 +23,7 @@ class AuditLogOut(BaseModel):
     details: Optional[str]
     timestamp: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 @router.get("/logs", response_model=List[AuditLogOut])
 def get_audit_logs(

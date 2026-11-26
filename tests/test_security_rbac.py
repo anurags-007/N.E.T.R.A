@@ -327,7 +327,7 @@ def test_mule_indicators_uses_lowercase_transaction_event_types(client_and_db):
 
 def test_risk_engine_handles_timezone_aware_and_naive_timestamps():
     aware_ts = datetime.now(timezone.utc).isoformat()
-    naive_ts = datetime.utcnow().isoformat()
+    naive_ts = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     for ts in (aware_ts, naive_ts):
         result = calculate_entity_risk({
             "summary_stats": {"total_cases": 2, "total_transaction_amount": 150000.0},

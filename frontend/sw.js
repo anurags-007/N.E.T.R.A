@@ -1,4 +1,4 @@
-const CACHE_NAME = 'netra-portal-v4';
+const CACHE_NAME = 'netra-portal-v5';
 const ASSETS_TO_CACHE = [
     '/frontend/index.html',
     '/frontend/dashboard.html',
@@ -11,7 +11,20 @@ const ASSETS_TO_CACHE = [
     '/frontend/js/app.js',
     '/frontend/js/api.js',
     '/frontend/js/security.js',
+    '/frontend/js/admin.js',
+    '/frontend/js/analytics.js',
+    '/frontend/js/analytics-enhancements.js',
+    '/frontend/js/case_detail.js',
+    '/frontend/js/case_filters.js',
+    '/frontend/js/requests.js',
+    '/frontend/js/request_filters.js',
+    '/frontend/js/tools.js',
     '/frontend/js/lib/purify.min.js',
+    '/frontend/js/lib/jspdf.umd.min.js',
+    '/frontend/js/lib/jspdf.plugin.autotable.min.js',
+    '/frontend/js/lib/jszip.min.js',
+    '/frontend/js/lib/mammoth.browser.min.js',
+    '/frontend/js/lib/xlsx.full.min.js',
     '/frontend/vendor/bootstrap/css/bootstrap.min.css',
     '/frontend/vendor/bootstrap/js/bootstrap.bundle.min.js',
     '/frontend/vendor/bootstrap-icons/font/bootstrap-icons.min.css',
