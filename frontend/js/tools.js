@@ -20,6 +20,13 @@ document.addEventListener('DOMContentLoaded', () => {
         roleDisplay.textContent = rank.toUpperCase();
     }
 
+    document.getElementById('logoutBtn')?.addEventListener('click', async (e) => {
+        e.preventDefault();
+        await API.logout(token);
+        localStorage.removeItem('token');
+        window.location.href = 'index.html';
+    });
+
     // Setup IP Lookup
     const form = document.getElementById('ipLookupForm');
     if (form) {
@@ -49,7 +56,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('resIP').textContent = data.resolved_ip || data.query;
                 document.getElementById('resISP').textContent = data.isp || 'Unknown';
                 document.getElementById('resCity').textContent = data.city || 'N/A';
-                document.getElementById('resRegion').textContent = data.country || 'N/A';
+                document.getElementById('resRegion').textContent = data.region || 'N/A';
                 document.getElementById('resCountry').textContent = data.country || 'N/A';
 
                 document.getElementById('mapLink').href = data.map_url;
@@ -118,14 +125,24 @@ function setupTowerDump(token) {
     function handleFiles(files) {
         selectedFiles = Array.from(files).filter(f => f.name.match(/\.(xlsx|xls|csv)$/i));
 
-        fileList.innerHTML = selectedFiles.map(f =>
-            `<div class="text-success"><i class="bi bi-file-earmark-excel-fill"></i> ${f.name} (${(f.size / 1024).toFixed(1)} KB)</div>`
-        ).join('');
+        fileList.innerHTML = '';
+        selectedFiles.forEach(f => {
+            const div = document.createElement('div');
+            div.className = 'text-success';
+            const icon = document.createElement('i');
+            icon.className = 'bi bi-file-earmark-excel-fill me-1';
+            div.appendChild(icon);
+            div.appendChild(document.createTextNode(`${f.name} (${(f.size / 1024).toFixed(1)} KB)`));
+            fileList.appendChild(div);
+        });
 
         analyzeBtn.disabled = selectedFiles.length < 2;
 
         if (selectedFiles.length < 2 && selectedFiles.length > 0) {
-            fileList.innerHTML += `<div class="text-danger mt-1 small"><i class="bi bi-exclamation-circle"></i> Please upload at least 2 files.</div>`;
+            const warn = document.createElement('div');
+            warn.className = 'text-danger mt-1 small';
+            warn.innerHTML = '<i class="bi bi-exclamation-circle"></i> Please upload at least 2 files.';
+            fileList.appendChild(warn);
         }
     }
 
@@ -171,14 +188,22 @@ function setupTowerDump(token) {
                 }
                 list.forEach(val => {
                     const tr = document.createElement('tr');
-                    tr.innerHTML = `
-                        <td class="fw-bold text-dark font-monospace">${val}</td>
-                        <td>
-                            <a href="analytics.html?search=${val}" target="_blank" class="btn btn-xs btn-outline-primary" style="font-size: 0.7rem;">
-                                <i class="bi bi-graph-up"></i> Investigate
-                            </a>
-                        </td>
-                    `;
+                    const tdVal = document.createElement('td');
+                    tdVal.className = 'fw-bold text-dark font-monospace';
+                    tdVal.textContent = val;
+
+                    const tdAction = document.createElement('td');
+                    const link = document.createElement('a');
+                    link.href = `analytics.html?search=${encodeURIComponent(val)}`;
+                    link.target = '_blank';
+                    link.rel = 'noopener noreferrer';
+                    link.className = 'btn btn-xs btn-outline-primary';
+                    link.style.fontSize = '0.7rem';
+                    link.innerHTML = '<i class="bi bi-graph-up"></i> Investigate';
+                    tdAction.appendChild(link);
+
+                    tr.appendChild(tdVal);
+                    tr.appendChild(tdAction);
                     tbody.appendChild(tr);
                 });
             };
@@ -201,11 +226,12 @@ function setupTowerDump(token) {
         const ph = document.getElementById('alertPlaceholder');
         if (!ph) { alert(msg); return; }
         ph.innerHTML = `
-            <div class="alert alert-${type} alert-dismissible fade show" role="alert">
-                <i class="bi bi-exclamation-triangle-fill me-2"></i>${msg}
+            <div class="alert alert-${escapeHtml(type)} alert-dismissible fade show" role="alert">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i><span class="alert-msg"></span>
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
         `;
+        ph.querySelector('.alert-msg').textContent = msg;
         setTimeout(() => {
             ph.innerHTML = '';
         }, 5000);

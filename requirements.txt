@@ -1,9 +1,10 @@
 fastapi
 uvicorn
-sqlalchemy
+sqlalchemy==2.0.36
+psycopg2-binary
 pydantic[email]
 python-jose[cryptography]
-passlib[bcrypt]
+passlib
 python-multipart
 reportlab
 pandas
@@ -13,6 +14,10 @@ cryptography
 email-validator
 python-dotenv
 slowapi
-bleach
 requests
 gunicorn
+PyPDF2
+Pillow
+geoip2
+pytest
+httpx

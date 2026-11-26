@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from backend.database import get_db
 from backend import models
 from backend.routers.auth import get_current_active_user
+from backend.utils.rbac import apply_jurisdiction_filter, authorize_case_access, get_accessible_case_ids
 
 router = APIRouter(
     prefix="/analytics",
@@ -23,10 +24,8 @@ def get_transaction_timeline(
     Build chronological transaction timeline for a financial fraud case
     Returns ordered sequence of events with timestamps
     """
-    # Verify case exists
-    case = db.query(models.Case).filter(models.Case.id == case_id).first()
-    if not case:
-        raise HTTPException(status_code=404, detail="Case not found")
+    # Verify case exists and user has jurisdiction access
+    case = authorize_case_access(case_id, current_user, db)
     
     # Get all timeline events for this case
     events = db.query(models.TransactionTimeline).filter(
@@ -64,10 +63,16 @@ def detect_mule_account_indicators(
     - Linked to multiple victim cases
     - Short account lifespan
     """
-    # Find all financial entities matching this account
-    entities = db.query(models.FinancialEntity).filter(
+    # Find financial entities matching this account within accessible cases
+    accessible_case_ids = get_accessible_case_ids(current_user, db)
+    entity_query = db.query(models.FinancialEntity).filter(
         models.FinancialEntity.account_number == account_number
-    ).all()
+    )
+    if accessible_case_ids is not None:
+        if not accessible_case_ids:
+            return {"account_number": account_number, "status": "not_found"}
+        entity_query = entity_query.filter(models.FinancialEntity.case_id.in_(accessible_case_ids))
+    entities = entity_query.all()
     
     if not entities:
         return {"account_number": account_number, "status": "not_found"}
@@ -84,9 +89,20 @@ def detect_mule_account_indicators(
         ).all()
         transactions.extend(case_transactions)
     
-    # Calculate inflow/outflow
-    inflow = sum([float(t.amount or 0) for t in transactions if t.event_type == "PAYMENT"])
-    outflow = sum([float(t.amount or 0) for t in transactions if t.event_type in ["WITHDRAWAL", "TRANSFER"]])
+    # Calculate inflow/outflow using TransactionEventType enums
+    inflow = sum([
+        float(t.amount or 0)
+        for t in transactions
+        if t.event_type == models.TransactionEventType.PAYMENT
+    ])
+    outflow = sum([
+        float(t.amount or 0)
+        for t in transactions
+        if t.event_type in [
+            models.TransactionEventType.WITHDRAWAL,
+            models.TransactionEventType.TRANSFER,
+        ]
+    ])
     
     outflow_ratio = (outflow / inflow * 100) if inflow > 0 else 0
     
@@ -113,6 +129,11 @@ def detect_mule_account_indicators(
     elif risk_score >= 30:
         classification = "FLAGGED_FOR_REVIEW"
     
+    linked_firs = []
+    for cid in linked_cases:
+        c = db.query(models.Case).filter(models.Case.id == cid).first()
+        linked_firs.append(c.fir_number if c else f"Case#{cid}")
+
     return {
         "account_number": account_number,
         "classification": classification,
@@ -124,10 +145,7 @@ def detect_mule_account_indicators(
             "total_outflow": outflow,
             "outflow_ratio": round(outflow_ratio, 2)
         },
-        "linked_fir_numbers": [
-            db.query(models.Case).filter(models.Case.id == cid).first().fir_number 
-            for cid in linked_cases
-        ],
+        "linked_fir_numbers": linked_firs,
         "note": "⚠️ Rule-based indicators only. Not AI prediction."
     }
 
@@ -140,45 +158,81 @@ def get_repeat_fraud_entities(
     Detect UPI IDs / Account Numbers appearing in multiple FIRs
     Critical intelligence for identifying repeat offenders
     """
-    # Find accounts appearing in multiple cases
-    repeat_accounts = db.query(
+    accessible_case_ids = get_accessible_case_ids(current_user, db)
+    if accessible_case_ids is not None and not accessible_case_ids:
+        return {"total_repeat_entities": 0, "alerts": []}
+
+    # Find accounts appearing in multiple accessible cases
+    acc_query = db.query(
         models.FinancialEntity.account_number,
         models.FinancialEntity.bank_name,
         func.count(distinct(models.FinancialEntity.case_id)).label('case_count')
     ).filter(
         models.FinancialEntity.account_number.isnot(None)
-    ).group_by(
+    )
+    if accessible_case_ids is not None:
+        acc_query = acc_query.filter(models.FinancialEntity.case_id.in_(accessible_case_ids))
+    repeat_accounts = acc_query.group_by(
         models.FinancialEntity.account_number,
         models.FinancialEntity.bank_name
     ).having(
         func.count(distinct(models.FinancialEntity.case_id)) > 1
     ).all()
     
-    # Find UPI IDs appearing in multiple cases
-    repeat_upis = db.query(
+    # Find UPI IDs appearing in multiple accessible cases
+    upi_query = db.query(
         models.FinancialEntity.upi_id,
         func.count(distinct(models.FinancialEntity.case_id)).label('case_count')
     ).filter(
         models.FinancialEntity.upi_id.isnot(None)
-    ).group_by(
+    )
+    if accessible_case_ids is not None:
+        upi_query = upi_query.filter(models.FinancialEntity.case_id.in_(accessible_case_ids))
+    repeat_upis = upi_query.group_by(
         models.FinancialEntity.upi_id
     ).having(
         func.count(distinct(models.FinancialEntity.case_id)) > 1
     ).all()
     
-    # Format results
+    # Format results (batched to eliminate N+1 queries)
     alerts = []
-    
+    acc_values = [acc for acc, _bank, _count in repeat_accounts]
+    upi_values = [upi for upi, _count in repeat_upis]
+
+    acc_entities_by_acc = {}
+    upi_entities_by_upi = {}
+    all_case_ids = set()
+
+    if acc_values:
+        acc_ent_q = db.query(models.FinancialEntity).filter(
+            models.FinancialEntity.account_number.in_(acc_values)
+        )
+        if accessible_case_ids is not None:
+            acc_ent_q = acc_ent_q.filter(models.FinancialEntity.case_id.in_(accessible_case_ids))
+        for e in acc_ent_q.all():
+            acc_entities_by_acc.setdefault(e.account_number, []).append(e)
+            all_case_ids.add(e.case_id)
+
+    if upi_values:
+        upi_ent_q = db.query(models.FinancialEntity).filter(
+            models.FinancialEntity.upi_id.in_(upi_values)
+        )
+        if accessible_case_ids is not None:
+            upi_ent_q = upi_ent_q.filter(models.FinancialEntity.case_id.in_(accessible_case_ids))
+        for e in upi_ent_q.all():
+            upi_entities_by_upi.setdefault(e.upi_id, []).append(e)
+            all_case_ids.add(e.case_id)
+
+    case_map = {}
+    if all_case_ids:
+        case_map = {
+            c.id: c.fir_number
+            for c in db.query(models.Case).filter(models.Case.id.in_(all_case_ids)).all()
+        }
+
     for acc, bank, count in repeat_accounts:
-        # Get linked FIR numbers
-        entities = db.query(models.FinancialEntity).filter(
-            models.FinancialEntity.account_number == acc
-        ).all()
-        fir_numbers = [
-            db.query(models.Case).filter(models.Case.id == e.case_id).first().fir_number
-            for e in entities
-        ]
-        
+        entities = acc_entities_by_acc.get(acc, [])
+        fir_numbers = [case_map.get(e.case_id, f"Case#{e.case_id}") for e in entities]
         alerts.append({
             "type": "BANK_ACCOUNT",
             "identifier": f"***{acc[-4:]} ({bank})",
@@ -187,16 +241,10 @@ def get_repeat_fraud_entities(
             "fir_numbers": fir_numbers,
             "alert_level": "HIGH" if count >= 4 else "MEDIUM"
         })
-    
+
     for upi, count in repeat_upis:
-        entities = db.query(models.FinancialEntity).filter(
-            models.FinancialEntity.upi_id == upi
-        ).all()
-        fir_numbers = [
-            db.query(models.Case).filter(models.Case.id == e.case_id).first().fir_number
-            for e in entities
-        ]
-        
+        entities = upi_entities_by_upi.get(upi, [])
+        fir_numbers = [case_map.get(e.case_id, f"Case#{e.case_id}") for e in entities]
         alerts.append({
             "type": "UPI_ID",
             "identifier": upi,
@@ -218,29 +266,12 @@ def get_financial_fraud_dashboard(
     """
     Financial fraud-specific dashboard metrics
     """
-    # Get all financial fraud cases accessible to user
-    cases_query = db.query(models.Case).filter(
-        models.Case.case_category == models.CaseCategory.FINANCIAL
+    # Get all financial fraud cases accessible to user (fail-closed)
+    cases_query = apply_jurisdiction_filter(
+        db.query(models.Case).filter(models.Case.case_category == models.CaseCategory.FINANCIAL),
+        current_user,
+        models.Case,
     )
-    
-    # Apply RBAC filtering
-    role = current_user.role
-    if role in [models.UserRole.CONSTABLE, models.UserRole.HEAD_CONSTABLE, 
-                models.UserRole.SUB_INSPECTOR, models.UserRole.INSPECTOR]:
-        if current_user.station_name:
-            cases_query = cases_query.filter(models.Case.police_station == current_user.station_name)
-    elif role == models.UserRole.DY_SP:
-        if current_user.sub_division:
-            cases_query = cases_query.filter(models.Case.sub_division == current_user.sub_division)
-    elif role == models.UserRole.SP:
-        if current_user.district_name:
-            cases_query = cases_query.filter(models.Case.district_name == current_user.district_name)
-    elif role == models.UserRole.DIG:
-        if current_user.range_name:
-            cases_query = cases_query.filter(models.Case.range_name == current_user.range_name)
-    elif role == models.UserRole.IGP:
-        if current_user.zone_name:
-            cases_query = cases_query.filter(models.Case.zone_name == current_user.zone_name)
     
     financial_cases = cases_query.all()
     case_ids = [c.id for c in financial_cases]

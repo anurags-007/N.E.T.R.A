@@ -1,23 +1,25 @@
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile
+from starlette.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from datetime import datetime
 import os
 
 from backend.database import get_db
-from backend import models, schemas
+from backend import config, models, schemas
 from backend.routers.auth import get_current_active_user
 from backend.utils.pdf_gen import generate_request_pdf
+from backend.utils.rbac import authorize_case_access, get_accessible_case_ids
+from backend.utils.validation import sanitize_filename, validate_file_magic_and_zip
 
 router = APIRouter(
     prefix="/requests",
     tags=["requests"]
 )
 
-REQUESTS_DIR = "generated_requests"
-if not os.path.exists(REQUESTS_DIR):
-    os.makedirs(REQUESTS_DIR)
+REQUESTS_DIR = "data/generated_requests"
+os.makedirs(REQUESTS_DIR, exist_ok=True)
 
 @router.post("/", response_model=schemas.RequestResponse)
 def create_request(
@@ -26,10 +28,8 @@ def create_request(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user)
 ):
-    # Verify Case
-    case = db.query(models.Case).filter(models.Case.id == case_id).first()
-    if not case:
-        raise HTTPException(status_code=404, detail="Case not found")
+    # Verify Case & jurisdiction (fail-closed)
+    case = authorize_case_access(case_id, current_user, db)
     
     # Create DB Entry
     new_request = models.TelecomRequest(
@@ -44,9 +44,12 @@ def create_request(
     db.refresh(new_request)
 
     # Generate PDF (Simplification: Auto-generate on create, even if pending approval. Or maybe AFTER approval? Plan said "System Automatically Generates... Is legally mandatory". Usually generated then signed. Let's gen it now.)
-    # We need the ID for the filename
-    file_name = f"REQ_{new_request.id}_{request.mobile_number}.pdf"
+    # Generate PDF safely inside REQUESTS_DIR
+    safe_mobile = sanitize_filename(request.mobile_number)
+    file_name = f"REQ_{new_request.id}_{safe_mobile}.pdf"
     file_path = os.path.join(REQUESTS_DIR, file_name)
+    if not os.path.abspath(file_path).startswith(os.path.abspath(REQUESTS_DIR) + os.sep):
+        raise HTTPException(status_code=400, detail="Invalid file path")
     
     generate_request_pdf(
         request_data={"id": new_request.id, "mobile_number": request.mobile_number, "request_type": request.request_type, "reason": request.reason},
@@ -70,10 +73,8 @@ def create_batch_request(
     """
     Intelligently groups mobile numbers by TSP and generates consolidated notices.
     """
-    # Verify Case
-    case = db.query(models.Case).filter(models.Case.id == case_id).first()
-    if not case:
-        raise HTTPException(status_code=404, detail="Case not found")
+    # Verify Case & jurisdiction (fail-closed)
+    case = authorize_case_access(case_id, current_user, db)
         
     created_requests = []
     
@@ -143,8 +144,15 @@ def read_requests(
     current_user: models.User = Depends(get_current_active_user)
 ):
     query = db.query(models.TelecomRequest)
-    if case_id:
+    if case_id is not None:
+        authorize_case_access(case_id, current_user, db)
         query = query.filter(models.TelecomRequest.case_id == case_id)
+    else:
+        accessible_ids = get_accessible_case_ids(current_user, db)
+        if accessible_ids is not None:
+            if not accessible_ids:
+                return []
+            query = query.filter(models.TelecomRequest.case_id.in_(accessible_ids))
     
     requests = query.offset(skip).limit(limit).all()
     return requests
@@ -176,6 +184,7 @@ def approve_request(
     req = db.query(models.TelecomRequest).filter(models.TelecomRequest.id == request_id).first()
     if not req:
         raise HTTPException(status_code=404, detail="Request not found")
+    authorize_case_access(req.case_id, current_user, db)
     
     # MANUAL WORKFLOW REQUESTED
     # Validated with user: Disable auto-stamping. 
@@ -221,6 +230,7 @@ def reject_request(
     req = db.query(models.TelecomRequest).filter(models.TelecomRequest.id == request_id).first()
     if not req:
         raise HTTPException(status_code=404, detail="Request not found")
+    authorize_case_access(req.case_id, current_user, db)
     
     req.status = models.RequestStatus.REJECTED
     req.reviewer_id = current_user.id
@@ -240,15 +250,22 @@ def download_request_pdf(
     req = db.query(models.TelecomRequest).filter(models.TelecomRequest.id == request_id).first()
     if not req:
         raise HTTPException(status_code=404, detail="Request not found")
+    authorize_case_access(req.case_id, current_user, db)
     
-    # Check if file exists
-    if not req.request_file_path or not os.path.exists(req.request_file_path):
-         raise HTTPException(status_code=404, detail="Requisition PDF not found")
+    # Check if file exists (including fallback if DB holds legacy relative path)
+    file_path = req.request_file_path
+    if file_path and not os.path.exists(file_path):
+        fallback_path = os.path.join(REQUESTS_DIR, os.path.basename(file_path))
+        if os.path.exists(fallback_path):
+            file_path = fallback_path
+
+    if not file_path or not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Requisition PDF not found")
     
     return FileResponse(
-        req.request_file_path,
+        file_path,
         media_type='application/pdf',
-        filename=os.path.basename(req.request_file_path)
+        filename=os.path.basename(file_path)
     )
 
 @router.post("/{request_id}/upload")
@@ -261,20 +278,45 @@ async def upload_request_file(
     req = db.query(models.TelecomRequest).filter(models.TelecomRequest.id == request_id).first()
     if not req:
         raise HTTPException(status_code=404, detail="Request not found")
+    authorize_case_access(req.case_id, current_user, db)
     
-    # Save the file
-    ext = os.path.splitext(file.filename)[1]
-    file_name = f"RESULT_{request_id}_{req.mobile_number}{ext}"
+    # Save the file safely inside REQUESTS_DIR
+    raw_name = file.filename or ""
+    ext = os.path.splitext(raw_name)[1].lower()
+    if ext not in config.ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid file type. Allowed: {', '.join(sorted(config.ALLOWED_EXTENSIONS))}",
+        )
+
+    content = await file.read()
+    if len(content) > config.MAX_FILE_SIZE_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large. Maximum size: {config.MAX_FILE_SIZE_MB}MB",
+        )
+
+    is_safe, safety_err = validate_file_magic_and_zip(content, ext)
+    if not is_safe:
+        raise HTTPException(status_code=400, detail=safety_err)
+
+    safe_mobile = sanitize_filename(req.mobile_number)
+    file_name = sanitize_filename(f"RESULT_{request_id}_{safe_mobile}{ext}")
     file_path = os.path.join(REQUESTS_DIR, file_name)
+    if not os.path.abspath(file_path).startswith(os.path.abspath(REQUESTS_DIR) + os.sep):
+        raise HTTPException(status_code=400, detail="Invalid file path")
+
+    def _write_result():
+        with open(file_path, "wb") as buffer:
+            buffer.write(content)
+
+    await run_in_threadpool(_write_result)
     
-    with open(file_path, "wb") as buffer:
-        buffer.write(await file.read())
-    
-    # Update request file path to the new one (as it's the most recent state)
-    req.request_file_path = file_path
+    # Preserve original signed requisition PDF in request_file_path; store uploaded response separately
+    req.result_file_path = file_path
     db.commit()
     
-    return {"message": "File uploaded successfully", "file_path": file_path}
+    return {"message": "File uploaded successfully", "result_file_path": file_path}
 
 @router.post("/{request_id}/dispatch")
 def mark_request_dispatched(
@@ -285,6 +327,7 @@ def mark_request_dispatched(
     req = db.query(models.TelecomRequest).filter(models.TelecomRequest.id == request_id).first()
     if not req:
         raise HTTPException(status_code=404, detail="Request not found")
+    authorize_case_access(req.case_id, current_user, db)
     
     # Only approved requests can be dispatched
     if req.status != models.RequestStatus.APPROVED:

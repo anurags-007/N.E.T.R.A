@@ -23,14 +23,21 @@ class API {
         return response.json();
     }
 
-    static async register(username, email, password, role = "officer", token) {
+    static async register(username, email, password, role = "officer", token, jurisdiction = {}) {
+        const payload = { username, email, password, role };
+        if (jurisdiction.station_name) payload.station_name = jurisdiction.station_name;
+        if (jurisdiction.sub_division) payload.sub_division = jurisdiction.sub_division;
+        if (jurisdiction.district_name) payload.district_name = jurisdiction.district_name;
+        if (jurisdiction.range_name) payload.range_name = jurisdiction.range_name;
+        if (jurisdiction.zone_name) payload.zone_name = jurisdiction.zone_name;
+
         const response = await fetch(`${API_URL}/auth/register`, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
                 "Authorization": `Bearer ${token}`
             },
-            body: JSON.stringify({ username, email, password, role }),
+            body: JSON.stringify(payload),
         });
         if (!response.ok) {
             const err = await response.json();
@@ -91,6 +98,22 @@ class API {
         if (!response.ok) {
             const err = await response.json();
             throw new Error(err.detail || "Failed to create request");
+        }
+        return response.json();
+    }
+
+    static async createBatchRequests(token, caseId, batchData) {
+        const response = await fetch(`${API_URL}/requests/batch?case_id=${caseId}`, {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${token}`,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify(batchData),
+        });
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.detail || "Failed to create batch requests");
         }
         return response.json();
     }
@@ -157,7 +180,10 @@ class API {
             headers: { "Authorization": `Bearer ${token}` }, // No Content-Type for FormData
             body: formData,
         });
-        if (!response.ok) throw new Error("Upload failed");
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.detail || "Upload failed");
+        }
         return response.json();
     }
 
@@ -193,7 +219,30 @@ class API {
     }
 
     static async downloadRequestLetter(token, requestId) {
-        window.location.href = `${API_URL}/requests/${requestId}/download?token=${token}`;
+        const response = await fetch(`${API_URL}/requests/${requestId}/download`, {
+            method: "GET",
+            headers: { "Authorization": `Bearer ${token}` },
+        });
+        if (!response.ok) throw new Error("Failed to download requisition letter");
+
+        const contentDisposition = response.headers.get('Content-Disposition');
+        let filename = `REQ_${requestId}.pdf`;
+        if (contentDisposition) {
+            const matches = /filename="?([^"]+)"?/.exec(contentDisposition);
+            if (matches && matches[1]) {
+                filename = matches[1];
+            }
+        }
+
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
     }
 
     static async uploadRequestFile(token, requestId, formData) {
@@ -202,7 +251,10 @@ class API {
             headers: { "Authorization": `Bearer ${token}` },
             body: formData,
         });
-        if (!response.ok) throw new Error("Upload failed");
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.detail || "Upload failed");
+        }
         return response.json();
     }
 
@@ -290,6 +342,64 @@ class API {
         if (!response.ok) {
             const err = await response.json();
             throw new Error(err.detail || "Failed to create NPCI request");
+        }
+        return response.json();
+    }
+
+    static async logout(token) {
+        if (!token) return;
+        try {
+            await fetch(`${API_URL}/auth/logout`, {
+                method: "POST",
+                headers: { "Authorization": `Bearer ${token}` }
+            });
+        } catch (_err) {
+            // Proceed with local token clear even if offline
+        }
+    }
+
+    static async getBsa63Manifest(token, caseId) {
+        const response = await fetch(`${API_URL}/files/case/${caseId}/bsa63-manifest`, {
+            headers: { "Authorization": `Bearer ${token}` }
+        });
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.detail || "Failed to fetch Section 63 BSA manifest");
+        }
+        return response.json();
+    }
+
+    static async createFreezeRequest(token, caseId, payload) {
+        const response = await fetch(`${API_URL}/freeze/request/${caseId}`, {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${token}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(payload)
+        });
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.detail || "Failed to initiate freeze request");
+        }
+        return response.json();
+    }
+
+    static async getFreezeRequests(token) {
+        const response = await fetch(`${API_URL}/freeze/requests/`, {
+            headers: { "Authorization": `Bearer ${token}` }
+        });
+        if (!response.ok) throw new Error("Failed to fetch freeze requests");
+        return response.json();
+    }
+
+    static async verifyAuditChain(token) {
+        const response = await fetch(`${API_URL}/admin/logs/verify`, {
+            headers: { "Authorization": `Bearer ${token}` }
+        });
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.detail || "Audit chain verification failed");
         }
         return response.json();
     }

@@ -1,40 +1,105 @@
 from fastapi import APIRouter, Depends, HTTPException, File, UploadFile
+from starlette.concurrency import run_in_threadpool
 from backend.routers.auth import get_current_active_user
 from backend import models
 
+import csv
+import io
+import ipaddress
+import os
+import re
 import socket
 import requests
 
 router = APIRouter(
     prefix="/tools",
-    tags=["tools"]
+    tags=["tools"],
 )
+
+GEOLITE_CITY_PATH = os.path.join("data", "geo", "GeoLite2-City.mmdb")
+GEOLITE_ASN_PATH = os.path.join("data", "geo", "GeoLite2-ASN.mmdb")
+
+
+def _lookup_offline_geolite2(target_ip: str, query: str, is_domain: bool) -> dict:
+    """Resolve IP geolocation and ASN offline using local MaxMind GeoLite2 .mmdb files."""
+    import geoip2.database
+    import geoip2.errors
+
+    country = None
+    region = None
+    city = None
+    lat = None
+    lon = None
+    asn = None
+    org = None
+    found_any = False
+
+    if os.path.exists(GEOLITE_CITY_PATH):
+        with geoip2.database.Reader(GEOLITE_CITY_PATH) as city_reader:
+            try:
+                city_resp = city_reader.city(target_ip)
+                country = city_resp.country.name
+                region = city_resp.subdivisions.most_specific.name if city_resp.subdivisions else None
+                city = city_resp.city.name
+                lat = city_resp.location.latitude
+                lon = city_resp.location.longitude
+                found_any = True
+            except geoip2.errors.AddressNotFoundError:
+                pass
+
+    if os.path.exists(GEOLITE_ASN_PATH):
+        with geoip2.database.Reader(GEOLITE_ASN_PATH) as asn_reader:
+            try:
+                asn_resp = asn_reader.asn(target_ip)
+                asn = asn_resp.autonomous_system_number
+                org = asn_resp.autonomous_system_organization
+                found_any = True
+            except geoip2.errors.AddressNotFoundError:
+                pass
+
+    if not found_any:
+        raise HTTPException(status_code=404, detail="IP address not found in offline GeoLite2 database")
+
+    org_lower = (org or "").lower()
+    is_mobile = any(k in org_lower for k in ("jio", "airtel", "vodafone", "idea", "bsnl", "cellular", "mobile"))
+    map_url = f"https://www.google.com/maps/search/?api=1&query={lat},{lon}" if (lat is not None and lon is not None) else "#"
+
+    return {
+        "query": query,
+        "resolved_ip": target_ip if is_domain else None,
+        "country": country,
+        "region": region,
+        "city": city,
+        "isp": org,
+        "organization": f"AS{asn} {org}" if asn and org else org,
+        "asn": asn,
+        "is_mobile": is_mobile,
+        "is_proxy": False,
+        "lat": lat,
+        "lon": lon,
+        "map_url": map_url,
+        "source": "offline_geolite2",
+    }
+
 
 @router.get("/ip-lookup")
 def ip_lookup(
     query: str,
-    current_user: models.User = Depends(get_current_active_user)
+    current_user: models.User = Depends(get_current_active_user),
 ):
     """
-    Resolve and Locate IP Address / Domain Name.
-    Uses public APIs (ip-api.com) for geolocation.
-    Respects privacy by not sending user-specific case data, only the IP query.
+    Resolve and locate IP address or domain name.
+    Uses local offline MaxMind GeoLite2 .mmdb files first (zero external network leak),
+    falling back to HTTPS lookup only if the .mmdb files are missing.
     """
     query = query.strip()
-    
-    # 1. Input Classification (IP vs Domain)
-    import ipaddress
     target_ip = query
     is_domain = False
-    is_valid_ip = False
 
-    # Check if input is a valid IP (v4 or v6) first
     try:
         ip_obj = ipaddress.ip_address(query)
-        is_valid_ip = True
         target_ip = str(ip_obj)
-        
-        # Check for Private/Local IP
+
         if ip_obj.is_private:
             return {
                 "query": query,
@@ -48,138 +113,139 @@ def ip_lookup(
                 "lat": 0,
                 "lon": 0,
                 "map_url": "#",
-                "note": "This is a Private IP. It exists only inside your local Network, not on the public internet."
+                "source": "local_rfc1918",
+                "note": "This is a Private IP. It exists only inside your local Network, not on the public internet.",
             }
-
     except ValueError:
-        # Not a valid IP, treat as Domain Name
         is_domain = True
         try:
             target_ip = socket.gethostbyname(query)
         except socket.gaierror:
             raise HTTPException(status_code=400, detail="Invalid Domain Name or IP address")
 
-    # 2. Geo-Location Lookup
-    # Using ip-api.com (Free for non-commercial, rate-limited)
-    # Ideally, for a police system, we'd buy a MaxMind local DB.
-    # For now, we wrap the external call.
-    try:
-        response = requests.get(f"http://ip-api.com/json/{target_ip}?fields=status,message,country,city,isp,org,as,mobile,proxy,query,lat,lon")
-        data = response.json()
-        
-        if data['status'] == 'fail':
-             raise HTTPException(status_code=400, detail=f"Lookup failed: {data.get('message')}")
-             
-        result = {
-            "query": query,
-            "resolved_ip": target_ip if is_domain else None,
-            "country": data.get('country'),
-            "city": data.get('city'),
-            "isp": data.get('isp'),
-            "organization": data.get('org'),
-            "is_mobile": data.get('mobile', False), # Good for distinguishing Jio mobile vs Fiber
-            "is_proxy": data.get('proxy', False),
-            "lat": data.get('lat'),
-            "lon": data.get('lon'),
-            "map_url": f"https://www.google.com/maps/search/?api=1&query={data.get('lat')},{data.get('lon')}"
-        }
-        
-        return result
+    # 1. Offline GeoLite2 Lookup (Preferred - zero external HTTP leakage)
+    if os.path.exists(GEOLITE_CITY_PATH) or os.path.exists(GEOLITE_ASN_PATH):
+        return _lookup_offline_geolite2(target_ip, query, is_domain)
 
-    except Exception as e:
-        # Fallback for Demo / Offline Mode
-        # If external API fails, return a realistic mock response for demonstration
-        print(f"IP Lookup Failed: {e}. Returning mock data.")
+    # 2. HTTPS Fallback ONLY if local .mmdb files are absent
+    try:
+        response = requests.get(f"https://ipwho.is/{target_ip}", timeout=5)
+        response.raise_for_status()
+        data = response.json()
+
+        if not data.get("success", False):
+            raise HTTPException(status_code=400, detail=f"Lookup failed: {data.get('message', 'Unknown error')}")
+
+        conn = data.get("connection") or {}
+        lat = data.get("latitude")
+        lon = data.get("longitude")
         return {
             "query": query,
-            "resolved_ip": target_ip,
-            "country": "India (Demo Result)",
-            "city": "Lucknow",
-            "isp": "Reliance Jio Infocomm Ltd",
-            "organization": "Jio",
-            "is_mobile": True,
+            "resolved_ip": target_ip if is_domain else None,
+            "country": data.get("country"),
+            "region": data.get("region"),
+            "city": data.get("city"),
+            "isp": conn.get("isp"),
+            "organization": conn.get("org"),
+            "asn": conn.get("asn"),
+            "is_mobile": False,
             "is_proxy": False,
-            "lat": 26.8467,
-            "lon": 80.9462,
-            "map_url": "https://www.google.com/maps/search/?api=1&query=26.8467,80.9462",
-            "note": "External API Unreachable. Showing Demo Data."
+            "lat": lat,
+            "lon": lon,
+            "map_url": f"https://www.google.com/maps/search/?api=1&query={lat},{lon}" if lat and lon else "#",
+            "source": "https_ipwho",
         }
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(
+            status_code=503,
+            detail="Offline GeoLite2 databases missing and external HTTPS geolocation service unavailable.",
+        )
+
+
+def _iter_cell_values(orig_name: str, content: bytes):
+    """Yield cell string values from CSV or XLSX without requiring native C-extension loaders."""
+    lower = orig_name.lower()
+    if lower.endswith(".csv"):
+        text = content.decode("utf-8", errors="replace")
+        reader = csv.reader(io.StringIO(text))
+        next(reader, None)  # Skip header
+        for row in reader:
+            for val in row:
+                if val is not None and str(val).strip():
+                    yield str(val).strip()
+    elif lower.endswith(".xlsx"):
+        import openpyxl
+        wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+        ws = wb.active
+        for i, row in enumerate(ws.iter_rows(values_only=True)):
+            if i == 0:
+                continue
+            for val in row:
+                if val is not None and str(val).strip():
+                    yield str(val).strip()
+        wb.close()
+    elif lower.endswith(".xls"):
+        import pandas as pd
+        df = pd.read_excel(io.BytesIO(content), dtype=str)
+        for col in df.columns:
+            for val in df[col].dropna():
+                s = str(val).strip()
+                if s:
+                    yield s
 
 
 @router.post("/analyze-tower-dump")
 async def analyze_tower_dump(
     files: list[UploadFile] = File(...),
-    current_user: models.User = Depends(get_current_active_user)
+    current_user: models.User = Depends(get_current_active_user),
 ):
     """
     TOWER DUMP & FINANCIAL ANALYSIS
     Input: Multiple Excel/CSV files.
     Output: Common Mobile Numbers, Bank Accounts, and UPI IDs present in ALL files.
     """
-    import pandas as pd
-    import io
-    import re
-    
     if len(files) < 2:
         raise HTTPException(status_code=400, detail="Please upload at least 2 files to compare.")
 
-    # Sets for intersection
-    common_mobile = set()
-    common_account = set()
-    common_upi = set()
-    
-    first_file = True
-    file_stats = []
+    payloads = []
+    for file in files:
+        payloads.append((file.filename or "", await file.read()))
 
-    try:
-        for file in files:
-            content = await file.read()
-            filename = file.filename.lower()
-            
-            # Read Data
-            if filename.endswith('.csv'):
-                df = pd.read_csv(io.BytesIO(content), dtype=str)
-            elif filename.endswith(('.xls', '.xlsx')):
-                df = pd.read_excel(io.BytesIO(content), dtype=str)
-            else:
-                continue # Skip non-data files
+    def _run_intersection() -> dict:
+        common_mobile = set()
+        common_account = set()
+        common_upi = set()
+        first_file = True
+        file_stats = []
 
-            # Local sets for this file
+        for orig_name, content in payloads:
+            if not orig_name.lower().endswith((".csv", ".xls", ".xlsx")):
+                continue
+
             file_mobile = set()
             file_account = set()
             file_upi = set()
-            
-            for col in df.columns:
-                for val in df[col].dropna():
-                    val_str = str(val).strip()
-                    
-                    # 1. Mobile Number (10 digits)
-                    # Remove non-digits for mobile check
-                    clean_mobile = re.sub(r'\D', '', val_str)
-                    if len(clean_mobile) >= 10:
-                        potential_mobile = clean_mobile[-10:]
-                        if potential_mobile.startswith(('6','7','8','9')):
-                            file_mobile.add(potential_mobile)
-                    
-                    # 2. UPI ID (contains @, no spaces)
-                    if '@' in val_str and ' ' not in val_str and len(val_str) > 5:
-                        file_upi.add(val_str.lower())
-                        
-                    # 3. Bank Account (9-18 digits, strictly numeric)
-                    # We use strict regex to avoid confusing with other numeric IDs
-                    if re.match(r'^\d{9,18}$', val_str):
-                        # Simple heuristic: Accounts usually don't start with 6-9 if they are 10 digits (conflict with mobile)
-                        # But to be safe, we add it. Overlap is handled by context usually.
-                        file_account.add(val_str)
-            
+
+            for val_str in _iter_cell_values(orig_name, content):
+                clean_mobile = re.sub(r"\D", "", val_str)
+                if len(clean_mobile) >= 10:
+                    potential_mobile = clean_mobile[-10:]
+                    if potential_mobile.startswith(("6", "7", "8", "9")):
+                        file_mobile.add(potential_mobile)
+                if "@" in val_str and " " not in val_str and len(val_str) > 5:
+                    file_upi.add(val_str.lower())
+                if re.match(r"^\d{9,18}$", val_str) and not re.match(r"^[6-9]\d{9}$", val_str):
+                    file_account.add(val_str)
+
             file_stats.append({
-                "filename": file.filename,
+                "filename": orig_name,
                 "mobiles": len(file_mobile),
                 "accounts": len(file_account),
-                "upis": len(file_upi)
+                "upis": len(file_upi),
             })
-            
-            # Intersection Logic
+
             if first_file:
                 common_mobile = file_mobile
                 common_account = file_account
@@ -189,19 +255,21 @@ async def analyze_tower_dump(
                 common_mobile = common_mobile.intersection(file_mobile)
                 common_account = common_account.intersection(file_account)
                 common_upi = common_upi.intersection(file_upi)
-                
+
+        return {
+            "common_numbers": list(common_mobile),
+            "common_accounts": list(common_account),
+            "common_upis": list(common_upi),
+            "counts": {
+                "mobile": len(common_mobile),
+                "account": len(common_account),
+                "upi": len(common_upi),
+            },
+            "file_stats": file_stats,
+            "message": "Analysis Complete",
+        }
+
+    try:
+        return await run_in_threadpool(_run_intersection)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Analysis Failed: {str(e)}")
-
-    return {
-        "common_numbers": list(common_mobile),
-        "common_accounts": list(common_account),
-        "common_upis": list(common_upi),
-        "counts": {
-            "mobile": len(common_mobile),
-            "account": len(common_account),
-            "upi": len(common_upi)
-        },
-        "file_stats": file_stats,
-        "message": "Analysis Complete"
-    }

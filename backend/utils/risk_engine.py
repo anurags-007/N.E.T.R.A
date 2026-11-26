@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 def calculate_entity_risk(investigation_data):
     """
@@ -71,13 +71,15 @@ def calculate_entity_risk(investigation_data):
     if len(stations) > 1:
         tags.append(f"🌐 INTER-DISTRICT GANG ({len(stations)} Stations)")
         
-    # Recency Check
+    # Recency Check (normalize naive vs timezone-aware datetimes to UTC)
     recent_activity = False
     if timeline:
         last_event = timeline[0].get("event_timestamp") # Assuming sorted desc
         if last_event:
             last_date = datetime.fromisoformat(last_event)
-            if (datetime.now() - last_date).days < 7:
+            if last_date.tzinfo is None:
+                last_date = last_date.replace(tzinfo=timezone.utc)
+            if (datetime.now(timezone.utc) - last_date).days < 7:
                  tags.append("🔥 RECENTLY ACTIVE (Last 7 Days)")
                  recent_activity = True
 

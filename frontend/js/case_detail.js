@@ -9,6 +9,30 @@ if (!token || !caseId) {
 // Global scope for button logic
 let userRole = null;
 
+document.getElementById('logoutBtn')?.addEventListener('click', async () => {
+    await API.logout(token);
+    localStorage.removeItem('token');
+    window.location.href = 'index.html';
+});
+
+document.getElementById('exportBsa63Btn')?.addEventListener('click', async () => {
+    try {
+        const manifest = await API.getBsa63Manifest(token, caseId);
+        const blob = new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `BSA63_Manifest_Case_${caseId}.json`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        showAlert('success', `Exported Sec 63(4)(c) BSA manifest (${manifest.total_evidence_items} hashed evidence item(s)).`);
+    } catch (err) {
+        showAlert('danger', err.message || 'Failed to export Section 63 BSA manifest');
+    }
+});
+
 async function init() {
     try {
         const payload = JSON.parse(atob(token.split('.')[1]));
@@ -85,21 +109,39 @@ async function loadEvidence() {
 
         evidenceList.forEach(e => {
             const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td>${e.original_filename}</td>
-                <td><span class="badge bg-info text-dark">${e.file_type}</span></td>
-                <td><code title="${e.file_hash}">${e.file_hash.substring(0, 8)}...</code></td>
-                <td class="text-center">
-                    <button class="btn btn-sm btn-outline-primary" onclick="viewEvidence(${e.id}, '${e.original_filename}', '${e.file_hash}')">
-                        <i class="bi bi-eye"></i> View
-                    </button>
-                </td>
-                <td class="text-end pe-3">
-                    <button class="btn btn-sm btn-outline-secondary" onclick="downloadFile(${e.id})">
-                        <i class="bi bi-download"></i> Download
-                    </button>
-                </td>
-            `;
+
+            const tdName = document.createElement('td');
+            tdName.textContent = e.original_filename;
+
+            const tdType = document.createElement('td');
+            const typeBadge = document.createElement('span');
+            typeBadge.className = 'badge bg-info text-dark';
+            typeBadge.textContent = e.file_type;
+            tdType.appendChild(typeBadge);
+
+            const tdHash = document.createElement('td');
+            const codeEl = document.createElement('code');
+            codeEl.title = e.file_hash;
+            codeEl.textContent = `${e.file_hash.substring(0, 8)}...`;
+            tdHash.appendChild(codeEl);
+
+            const tdView = document.createElement('td');
+            tdView.className = 'text-center';
+            const viewBtn = document.createElement('button');
+            viewBtn.className = 'btn btn-sm btn-outline-primary';
+            viewBtn.innerHTML = '<i class="bi bi-eye"></i> View';
+            viewBtn.addEventListener('click', () => viewEvidence(e.id, e.original_filename, e.file_hash));
+            tdView.appendChild(viewBtn);
+
+            const tdDownload = document.createElement('td');
+            tdDownload.className = 'text-end pe-3';
+            const dlBtn = document.createElement('button');
+            dlBtn.className = 'btn btn-sm btn-outline-secondary';
+            dlBtn.innerHTML = '<i class="bi bi-download"></i> Download';
+            dlBtn.addEventListener('click', () => downloadFile(e.id));
+            tdDownload.appendChild(dlBtn);
+
+            tr.append(tdName, tdType, tdHash, tdView, tdDownload);
             tbody.appendChild(tr);
         });
 
@@ -126,60 +168,89 @@ async function viewEvidence(id, filename, integrityHash) {
 
     modal.show(); // Show early for loading state
 
-    const streamUrl = `${API_URL}/files/view/${id}?token=${token}`;
+    const viewUrl = `${API_URL}/files/view/${id}`;
     const ext = filename.split('.').pop().toLowerCase();
+    let activeBlobUrl = null;
+
+    async function fetchAuthenticatedResponse(url) {
+        const resp = await fetch(url, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!resp.ok) {
+            throw new Error(`Failed to fetch evidence (${resp.status})`);
+        }
+        return resp;
+    }
 
     try {
-        let html = '';
-
         // 1. Images
         if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].includes(ext)) {
-            html = `<img src="${streamUrl}" class="img-fluid rounded" style="max-height: 70vh; object-fit: contain;">`;
-            contentDiv.innerHTML = html;
+            const resp = await fetchAuthenticatedResponse(viewUrl);
+            const blob = await resp.blob();
+            activeBlobUrl = URL.createObjectURL(blob);
+            contentDiv.innerHTML = '';
+            const img = document.createElement('img');
+            img.src = activeBlobUrl;
+            img.className = 'img-fluid rounded';
+            img.style.maxHeight = '70vh';
+            img.style.objectFit = 'contain';
+            contentDiv.appendChild(img);
         }
 
         // 2. Video
         else if (['mp4', 'webm', 'ogg', 'mov', 'avi', 'mkv'].includes(ext)) {
-            html = `
-                <video controls autoplay class="w-100" style="max-height: 70vh;">
-                    <source src="${streamUrl}" type="video/mp4">
-                    <source src="${streamUrl}" type="video/webm">
-                    <div class="text-white p-4">
-                        <i class="bi bi-play-circle-fill fs-1"></i>
-                        <p>Browser cannot playback this format directly.</p>
-                        <button class="btn btn-primary" onclick="downloadFile(${id})">Download to Play</button>
-                    </div>
-                </video>`;
-            contentDiv.innerHTML = html;
+            const resp = await fetchAuthenticatedResponse(viewUrl);
+            const blob = await resp.blob();
+            activeBlobUrl = URL.createObjectURL(blob);
+            contentDiv.innerHTML = '';
+            const video = document.createElement('video');
+            video.controls = true;
+            video.autoplay = true;
+            video.className = 'w-100';
+            video.style.maxHeight = '70vh';
+            video.src = activeBlobUrl;
+            contentDiv.appendChild(video);
         }
 
         // 3. Audio
         else if (['mp3', 'wav', 'ogg', 'm4a'].includes(ext)) {
-            html = `
+            const resp = await fetchAuthenticatedResponse(viewUrl);
+            const blob = await resp.blob();
+            activeBlobUrl = URL.createObjectURL(blob);
+            contentDiv.innerHTML = `
                 <div class="text-center p-5">
                     <i class="bi bi-file-music-fill fs-1 text-info animate-pulse mb-3 d-block"></i>
-                    <audio controls autoplay class="w-100" style="max-width: 500px;">
-                        <source src="${streamUrl}">
-                        Your browser does not support audio element.
-                    </audio>
                 </div>`;
-            contentDiv.innerHTML = html;
+            const audio = document.createElement('audio');
+            audio.controls = true;
+            audio.autoplay = true;
+            audio.className = 'w-100';
+            audio.style.maxWidth = '500px';
+            audio.src = activeBlobUrl;
+            contentDiv.querySelector('div').appendChild(audio);
         }
 
         // 4. PDF
         else if (ext === 'pdf') {
-            html = `<iframe src="${streamUrl}" width="100%" height="700px" style="border:none; border-radius: 8px;"></iframe>`;
-            contentDiv.innerHTML = html;
+            const resp = await fetchAuthenticatedResponse(viewUrl);
+            const blob = await resp.blob();
+            activeBlobUrl = URL.createObjectURL(blob);
+            contentDiv.innerHTML = '';
+            const iframe = document.createElement('iframe');
+            iframe.src = activeBlobUrl;
+            iframe.width = '100%';
+            iframe.height = '700px';
+            iframe.style.border = 'none';
+            iframe.style.borderRadius = '8px';
+            contentDiv.appendChild(iframe);
         }
 
-        // 5. Spreadsheets (XSLX, CSV, ODTS) -> SheetJS
+        // 5. Spreadsheets (XSLX, CSV, ODTS) -> SheetJS + DOMPurify
         else if (['xlsx', 'xls', 'csv', 'ods'].includes(ext)) {
             if (typeof XLSX === 'undefined') {
                 throw new Error("SheetJS library (XLSX) is not loaded. Please check your internet connection.");
             }
-            const resp = await fetch(streamUrl);
-            if (!resp.ok) throw new Error("Failed to fetch file content.");
-
+            const resp = await fetchAuthenticatedResponse(viewUrl);
             const blob = await resp.blob();
             const buffer = await blob.arrayBuffer();
 
@@ -188,76 +259,98 @@ async function viewEvidence(id, filename, integrityHash) {
                 if (!wb.SheetNames || wb.SheetNames.length === 0) {
                     throw new Error("Spreadsheet contains no sheets.");
                 }
-                const ws = wb.Sheets[wb.SheetNames[0]]; // First sheet
+                const ws = wb.Sheets[wb.SheetNames[0]];
                 const tblHtml = XLSX.utils.sheet_to_html(ws, { id: "excelTable", className: "table table-striped table-bordered table-sm" });
-                contentDiv.innerHTML = `<div class="bg-white p-2 rounded border" style="max-height: 70vh; overflow: auto; text-align: left;">${tblHtml}</div>`;
+                contentDiv.innerHTML = `<div class="bg-white p-2 rounded border" style="max-height: 70vh; overflow: auto; text-align: left;">${safeHTML(tblHtml)}</div>`;
             } catch (e) {
                 console.error("SheetJS Error:", e);
                 throw new Error("Failed to parse spreadsheet: " + e.message);
             }
         }
 
-        // 6. Documents (DOCX) -> Mammoth
+        // 6. Documents (DOCX) -> Mammoth + DOMPurify
         else if (ext === 'docx') {
-            const resp = await fetch(streamUrl);
+            const resp = await fetchAuthenticatedResponse(viewUrl);
             const blob = await resp.blob();
             const arrayBuffer = await blob.arrayBuffer();
 
-            mammoth.convertToHtml({ arrayBuffer: arrayBuffer })
-                .then(result => {
-                    contentDiv.innerHTML = `<div class="bg-white text-dark p-4 rounded text-start" style="max-height: 70vh; overflow: auto;">${result.value}</div>`;
-                })
-                .catch(err => {
-                    throw new Error("Docx Rendering Failed: " + err.message);
-                });
+            const result = await mammoth.convertToHtml({ arrayBuffer: arrayBuffer });
+            contentDiv.innerHTML = `<div class="bg-white text-dark p-4 rounded text-start" style="max-height: 70vh; overflow: auto;">${safeHTML(result.value)}</div>`;
         }
 
         // 7. Text / Logs
         else if (['txt', 'log', 'json', 'xml', 'py', 'js', 'md'].includes(ext)) {
-            const resp = await fetch(streamUrl);
+            const resp = await fetchAuthenticatedResponse(viewUrl);
             const text = await resp.text();
-            contentDiv.innerHTML = `<pre class="text-start text-dark bg-light p-3 rounded border" style="max-height: 70vh; overflow: auto; font-family: monospace;">${text.replace(/</g, '&lt;')}</pre>`;
+            contentDiv.innerHTML = '';
+            const pre = document.createElement('pre');
+            pre.className = 'text-start text-dark bg-light p-3 rounded border';
+            pre.style.maxHeight = '70vh';
+            pre.style.overflow = 'auto';
+            pre.style.fontFamily = 'monospace';
+            pre.textContent = text;
+            contentDiv.appendChild(pre);
         }
 
         // 8. Archives (ZIP) -> JSZip
         else if (ext === 'zip') {
-            const resp = await fetch(streamUrl);
+            const resp = await fetchAuthenticatedResponse(viewUrl);
             const blob = await resp.blob();
             const zip = await JSZip.loadAsync(blob);
 
-            let listHtml = '<ul class="list-group list-group-flush text-start">';
-            zip.forEach((relativePath, zipEntry) => {
-                const icon = zipEntry.dir ? 'bi-folder-fill text-warning' : 'bi-file-earmark-text text-light';
-                listHtml += `<li class="list-group-item bg-transparent text-white border-secondary"><i class="bi ${icon} me-2"></i> ${relativePath}</li>`;
-            });
-            listHtml += '</ul>';
+            const wrapper = document.createElement('div');
+            wrapper.className = 'p-3';
+            wrapper.style.maxHeight = '70vh';
+            wrapper.style.overflow = 'auto';
 
-            contentDiv.innerHTML = `<div class="p-3" style="max-height: 70vh; overflow: auto;">
-                <h6 class="text-info mb-3"><i class="bi bi-file-zip-fill"></i> Archive Contents</h6>
-                ${listHtml}
-            </div>`;
+            const heading = document.createElement('h6');
+            heading.className = 'text-info mb-3';
+            heading.innerHTML = '<i class="bi bi-file-zip-fill"></i> Archive Contents';
+            wrapper.appendChild(heading);
+
+            const ul = document.createElement('ul');
+            ul.className = 'list-group list-group-flush text-start';
+            zip.forEach((relativePath, zipEntry) => {
+                const li = document.createElement('li');
+                li.className = 'list-group-item bg-transparent text-white border-secondary';
+                const icon = document.createElement('i');
+                icon.className = `bi ${zipEntry.dir ? 'bi-folder-fill text-warning' : 'bi-file-earmark-text text-light'} me-2`;
+                li.appendChild(icon);
+                li.appendChild(document.createTextNode(relativePath));
+                ul.appendChild(li);
+            });
+            wrapper.appendChild(ul);
+            contentDiv.innerHTML = '';
+            contentDiv.appendChild(wrapper);
         }
 
         // Fallback
         else {
             contentDiv.innerHTML = `<div class="text-dark p-5">
                 <i class="bi bi-file-earmark-binary fs-1 opacity-50"></i>
-                <p class="mt-3">Preview not available for this file type (${ext}).</p>
-                <button class="btn btn-primary btn-sm mt-2" onclick="downloadFile(${id})">Download to View</button>
+                <p class="mt-3">Preview not available for this file type (${escapeHtml(ext)}).</p>
+                <button class="btn btn-primary btn-sm mt-2" id="fallbackDownloadBtn">Download to View</button>
             </div>`;
+            contentDiv.querySelector('#fallbackDownloadBtn').addEventListener('click', () => downloadFile(id));
         }
 
     } catch (err) {
         console.error("Viewer Error:", err);
         contentDiv.innerHTML = `<div class="alert alert-danger">
             <i class="bi bi-exclamation-triangle"></i> Failed to render file.<br>
-            <small>${err.message}</small><br>
-            <button class="btn btn-sm btn-light mt-2" onclick="downloadFile(${id})">Try Downloading</button>
+            <small class="viewer-err-msg"></small><br>
+            <button class="btn btn-sm btn-light mt-2" id="errDownloadBtn">Try Downloading</button>
         </div>`;
+        contentDiv.querySelector('.viewer-err-msg').textContent = err.message;
+        contentDiv.querySelector('#errDownloadBtn').addEventListener('click', () => downloadFile(id));
     }
 
     // Cleanup
     modalEl.addEventListener('hidden.bs.modal', () => {
+        if (activeBlobUrl) {
+            URL.revokeObjectURL(activeBlobUrl);
+            activeBlobUrl = null;
+        }
         contentDiv.innerHTML = '<div class="text-dark">Loading...</div>';
         // Reset modal size when closed
         const dialog = document.getElementById('viewModalDialog');
@@ -321,11 +414,12 @@ async function downloadFile(id) {
 function showAlert(type, msg) {
     const ph = document.getElementById('alertPlaceholder');
     ph.innerHTML = `
-        <div class="alert alert-${type} alert-dismissible fade show" role="alert">
-            ${msg}
+        <div class="alert alert-${escapeHtml(type)} alert-dismissible fade show" role="alert">
+            <span class="alert-msg"></span>
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         </div>
     `;
+    ph.querySelector('.alert-msg').textContent = msg;
     setTimeout(() => {
         ph.innerHTML = '';
     }, 5000);
@@ -342,37 +436,131 @@ async function loadFinancialData() {
             document.getElementById('financialCard').classList.remove('d-none');
             const listDiv = document.getElementById('financialEntitiesList');
             const selectDiv = document.getElementById('npciEntitySelect');
+            const freezeSelectDiv = document.getElementById('freezeEntitySelect');
 
             listDiv.innerHTML = '';
-            selectDiv.innerHTML = '';
+            if (selectDiv) selectDiv.innerHTML = '';
+            if (freezeSelectDiv) freezeSelectDiv.innerHTML = '';
             financialEntitiesMap = {};
 
             entities.forEach(ent => {
                 financialEntitiesMap[ent.id] = ent;
 
-                // Add to List
-                const identifier = ent.upi_id || ent.account_number || ent.wallet_provider;
+                // Add to List safely
+                const identifier = ent.upi_id || ent.account_number || ent.wallet_provider || 'N/A';
                 const item = document.createElement('div');
                 item.className = 'd-flex justify-content-between align-items-center mb-2 p-2 bg-light rounded border';
-                item.innerHTML = `
-                    <div>
-                        <span class="badge bg-dark me-2">${ent.entity_type.replace('_', ' ').toUpperCase()}</span>
-                        <span class="font-monospace fw-bold">${identifier}</span>
-                    </div>
-                `;
+
+                const inner = document.createElement('div');
+                const badge = document.createElement('span');
+                badge.className = 'badge bg-dark me-2';
+                badge.textContent = ent.entity_type.replace('_', ' ').toUpperCase();
+
+                const identSpan = document.createElement('span');
+                identSpan.className = 'font-monospace fw-bold';
+                identSpan.textContent = identifier;
+
+                inner.append(badge, identSpan);
+                item.appendChild(inner);
                 listDiv.appendChild(item);
 
-                // Add to Modal Select
-                const option = document.createElement('option');
-                option.value = ent.id;
-                option.textContent = `${ent.entity_type.toUpperCase()}: ${identifier}`;
-                selectDiv.appendChild(option);
+                // Add to NPCI Modal Select
+                if (selectDiv) {
+                    const option = document.createElement('option');
+                    option.value = ent.id;
+                    option.textContent = `${ent.entity_type.toUpperCase()}: ${identifier}`;
+                    selectDiv.appendChild(option);
+                }
+
+                // Add to Freeze Modal Select
+                if (freezeSelectDiv) {
+                    const fOpt = document.createElement('option');
+                    fOpt.value = ent.id;
+                    fOpt.textContent = `${ent.entity_type.toUpperCase()}: ${identifier}`;
+                    freezeSelectDiv.appendChild(fOpt);
+                }
             });
+
+            prefillFreezeInputs(entities[0]);
+            await loadFreezeRequests();
         }
     } catch (err) {
         console.error("Financial Data Error:", err);
     }
 }
+
+function prefillFreezeInputs(ent) {
+    if (!ent) return;
+    const bankInput = document.getElementById('freezeBankName');
+    const accInput = document.getElementById('freezeAccountNumber');
+    if (bankInput) bankInput.value = ent.bank_name || ent.wallet_provider || 'PSP / Partner Bank';
+    if (accInput) accInput.value = ent.account_number || ent.upi_id || '';
+}
+
+document.getElementById('freezeEntitySelect')?.addEventListener('change', (e) => {
+    const ent = financialEntitiesMap[parseInt(e.target.value, 10)];
+    prefillFreezeInputs(ent);
+});
+
+async function loadFreezeRequests() {
+    const listDiv = document.getElementById('freezeRequestsList');
+    if (!listDiv) return;
+    try {
+        const allReqs = await API.getFreezeRequests(token);
+        const caseReqs = allReqs.filter(r => String(r.case_id) === String(caseId));
+        listDiv.innerHTML = '';
+        if (caseReqs.length === 0) return;
+
+        const heading = document.createElement('h6');
+        heading.className = 'text-muted small fw-bold mt-2 mb-2';
+        heading.textContent = `ACTIVE FREEZE ORDERS (${caseReqs.length})`;
+        listDiv.appendChild(heading);
+
+        caseReqs.forEach(req => {
+            const row = document.createElement('div');
+            row.className = 'd-flex justify-content-between align-items-center p-2 mb-1 bg-light rounded border small';
+
+            const left = document.createElement('div');
+            const bankStrong = document.createElement('strong');
+            bankStrong.textContent = `${req.bank_name} `;
+            const accSpan = document.createElement('span');
+            accSpan.className = 'font-monospace text-muted';
+            accSpan.textContent = req.account_number;
+            left.append(bankStrong, accSpan);
+
+            const badge = document.createElement('span');
+            badge.className = `badge ${req.status === 'confirmed' ? 'bg-success' : 'bg-danger'}`;
+            badge.textContent = `${String(req.urgency_level || '').toUpperCase()} · ${String(req.status || '').toUpperCase()}`;
+
+            row.append(left, badge);
+            listDiv.appendChild(row);
+        });
+    } catch (_err) {
+        // Non-blocking
+    }
+}
+
+document.getElementById('freezeForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    const data = Object.fromEntries(formData.entries());
+    const entityId = parseInt(data.financial_entity_id, 10);
+
+    try {
+        await API.createFreezeRequest(token, caseId, {
+            financial_entity_id: entityId,
+            bank_name: data.bank_name.trim(),
+            account_number: data.account_number.trim(),
+            urgency_level: data.urgency_level,
+            justification: data.justification.trim()
+        });
+        showAlert('success', 'Section 106 BNSS Freeze Order issued successfully.');
+        bootstrap.Modal.getInstance(document.getElementById('freezeModal'))?.hide();
+        await loadFreezeRequests();
+    } catch (err) {
+        showAlert('danger', err.message || 'Failed to issue freeze order');
+    }
+});
 
 // NPCI Form Handler
 const npciForm = document.getElementById('npciForm');

@@ -6,6 +6,7 @@ from datetime import datetime
 from backend.database import get_db
 from backend import models, schemas
 from backend.routers.auth import get_current_active_user
+from backend.utils.audit import verify_audit_chain
 
 router = APIRouter(
     prefix="/admin",
@@ -30,10 +31,30 @@ def get_audit_logs(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user)
 ):
-    # Optional: Restrict to SHO/Admin
-    # if current_user.role != models.UserRole.SHO: ...
-    
-    logs = db.query(models.AuditLog).order_by(models.AuditLog.timestamp.desc()).limit(100).all()
+    allowed_roles = {
+        models.UserRole.ADMIN,
+        models.UserRole.INSPECTOR,  # SHO
+        models.UserRole.SP,
+        models.UserRole.DGP,
+    }
+    if current_user.role not in allowed_roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only SHO, SP, DGP, or Admin can view audit logs."
+        )
+
+    query = db.query(models.AuditLog).join(models.User, models.AuditLog.user_id == models.User.id)
+
+    if current_user.role == models.UserRole.INSPECTOR:
+        if not current_user.station_name:
+            raise HTTPException(status_code=403, detail="Jurisdiction not assigned (station).")
+        query = query.filter(models.User.station_name == current_user.station_name)
+    elif current_user.role == models.UserRole.SP:
+        if not current_user.district_name:
+            raise HTTPException(status_code=403, detail="Jurisdiction not assigned (district).")
+        query = query.filter(models.User.district_name == current_user.district_name)
+
+    logs = query.order_by(models.AuditLog.timestamp.desc()).limit(100).all()
     
     # Transform for simpler frontend consumption
     results = []
@@ -46,3 +67,13 @@ def get_audit_logs(
             "timestamp": log.timestamp
         })
     return results
+
+
+@router.get("/logs/verify")
+def verify_logs_chain(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+):
+    if current_user.role not in {models.UserRole.ADMIN, models.UserRole.DGP}:
+        raise HTTPException(status_code=403, detail="Only Admin or DGP can verify full audit chain.")
+    return verify_audit_chain(db)

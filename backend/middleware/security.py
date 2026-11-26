@@ -15,8 +15,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         # Prevent MIME-type sniffing
         response.headers["X-Content-Type-Options"] = "nosniff"
         
-        # Prevent clickjacking
-        response.headers["X-Frame-Options"] = "DENY"
+        # Prevent clickjacking while permitting same-origin PDF/evidence previews
+        response.headers["X-Frame-Options"] = "SAMEORIGIN"
         
         # XSS protection (legacy but still useful)
         response.headers["X-XSS-Protection"] = "1; mode=block"
@@ -25,15 +25,18 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         if config.ENVIRONMENT == "production":
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
         
-        # Content Security Policy
+        # Content Security Policy (fully self-hosted air-gapped policy)
         csp_directives = [
             "default-src 'self'",
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval' cdn.jsdelivr.net unpkg.com",  # Allow Bootstrap JS & Vis.js
-            "style-src 'self' 'unsafe-inline' cdn.jsdelivr.net fonts.googleapis.com",  # Allow Bootstrap CSS
-            "font-src 'self' fonts.gstatic.com cdn.jsdelivr.net",
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+            "style-src 'self' 'unsafe-inline'",
+            "font-src 'self'",
             "img-src 'self' data: blob:",
-            "connect-src 'self' unpkg.com",
-            "frame-ancestors 'none'",
+            "media-src 'self' blob:",
+            "frame-src 'self' blob:",
+            "object-src 'self' blob:",
+            "connect-src 'self' blob:",
+            "frame-ancestors 'self'",
         ]
         response.headers["Content-Security-Policy"] = "; ".join(csp_directives)
         

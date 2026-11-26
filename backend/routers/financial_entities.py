@@ -5,6 +5,8 @@ from sqlalchemy.orm import Session
 from backend.database import get_db
 from backend import models, schemas
 from backend.routers.auth import get_current_active_user
+from backend.utils.audit import record_audit_log
+from backend.utils.rbac import authorize_case_access
 
 router = APIRouter(
     prefix="/financial-entities",
@@ -21,10 +23,8 @@ def create_financial_entity(
     """
     Add a financial entity (bank account, UPI ID, wallet) to a case
     """
-    # Verify case exists
-    case = db.query(models.Case).filter(models.Case.id == case_id).first()
-    if not case:
-        raise HTTPException(status_code=404, detail="Case not found")
+    # Verify case exists and user has jurisdiction access
+    case = authorize_case_access(case_id, current_user, db)
     
     # Authorization: Only SI and above
     if current_user.role in [models.UserRole.CONSTABLE, models.UserRole.HEAD_CONSTABLE]:
@@ -52,13 +52,13 @@ def create_financial_entity(
     db.refresh(new_entity)
     
     # Log action
-    audit = models.AuditLog(
+    record_audit_log(
+        db,
         user_id=current_user.id,
         action=f"Added financial entity to case {case.fir_number}",
-        details=f"Type: {entity.entity_type}, Amount: {entity.transaction_amount}"
+        details=f"Type: {entity.entity_type}, Amount: {entity.transaction_amount}",
+        commit=True,
     )
-    db.add(audit)
-    db.commit()
     
     return new_entity
 
@@ -71,6 +71,7 @@ def get_case_financial_entities(
     """
     Get all financial entities linked to a case
     """
+    authorize_case_access(case_id, current_user, db)
     entities = db.query(models.FinancialEntity).filter(
         models.FinancialEntity.case_id == case_id
     ).all()
@@ -88,7 +89,7 @@ def verify_financial_entity(
     """
     # Authorization: SHO and above
     if current_user.role in [models.UserRole.CONSTABLE, models.UserRole.HEAD_CONSTABLE,
-                             models.UserRole.SUB_INSPECTOR]:
+                             models.UserRole.SUB_INSPECTOR, models.UserRole.OFFICER]:
         raise HTTPException(status_code=403, detail="Only SHO and above can verify entities")
     
     entity = db.query(models.FinancialEntity).filter(
@@ -97,6 +98,7 @@ def verify_financial_entity(
     
     if not entity:
         raise HTTPException(status_code=404, detail="Financial entity not found")
+    authorize_case_access(entity.case_id, current_user, db)
     
     entity.verification_status = "verified"
     db.commit()
@@ -122,6 +124,7 @@ def delete_financial_entity(
     
     if not entity:
         raise HTTPException(status_code=404, detail="Financial entity not found")
+    authorize_case_access(entity.case_id, current_user, db)
     
     db.delete(entity)
     db.commit()

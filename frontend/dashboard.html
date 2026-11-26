@@ -2,14 +2,14 @@
 <html lang="en">
 
 <head>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.8/purify.min.js"></script>
+    <script src="js/lib/purify.min.js"></script>
     <script src="js/security.js"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - N.E.T.R.A.</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Bootstrap Icons -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <link href="vendor/bootstrap/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons (Self-Hosted) -->
+    <link rel="stylesheet" href="vendor/bootstrap-icons/font/bootstrap-icons.min.css">
     <link href="css/styles.css" rel="stylesheet">
 </head>
 
@@ -121,7 +121,7 @@
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <span><i class="bi bi-list-task me-2"></i>Active Records</span>
                     <div class="d-flex gap-2">
-                        <button class="btn btn-sm btn-outline-secondary" onclick="app.loadCases()">
+                        <button class="btn btn-sm btn-outline-secondary" onclick="loadCases()">
                             <i class="bi bi-arrow-clockwise"></i> Refresh
                         </button>
                         <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#newCaseModal">
@@ -323,7 +323,7 @@
     <script>
         // Service Worker Registration
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('/sw.js')
+            navigator.serviceWorker.register('/frontend/sw.js')
                 .then(reg => console.log('Service Worker Registered'))
                 .catch(err => console.log('Service Worker Error', err));
         }
@@ -412,7 +412,7 @@
             });
         }
     </script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
 </body>
 
 </html>

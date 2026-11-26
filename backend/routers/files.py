@@ -1,14 +1,20 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from starlette.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 from datetime import datetime
 import os
 import hashlib
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, MultiFernet
 import shutil
 
 from backend.database import get_db
 from backend import models, schemas
 from backend.routers.auth import get_current_active_user
+from backend.utils.audit import record_audit_log
+from backend.utils.cdr_indexer import index_cdr_bytes
+from backend.utils.pdf_gen import generate_bsa_63_manifest
+from backend.utils.rbac import authorize_case_access
+from backend.utils.validation import sanitize_filename, validate_file_magic_and_zip
 
 from backend import config
 
@@ -18,11 +24,10 @@ router = APIRouter(
 )
 
 # Secure storage path
-UPLOAD_DIR = "secure_uploads"
-if not os.path.exists(UPLOAD_DIR):
-    os.makedirs(UPLOAD_DIR)
+UPLOAD_DIR = "data/secure_uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-cipher_suite = Fernet(config.ENCRYPTION_KEY)
+cipher_suite = MultiFernet([Fernet(k) for k in config.ENCRYPTION_KEYS])
 
 @router.post("/upload/{case_id}", response_model=schemas.EvidenceResponse)
 async def upload_evidence(
@@ -57,47 +62,36 @@ async def upload_evidence(
             detail=f"Invalid file type. Allowed: {', '.join(config.ALLOWED_EXTENSIONS)}"
         )
     
-    # Verify Case access (scope check)
-    case = db.query(models.Case).filter(models.Case.id == case_id).first()
-    if not case:
-        raise HTTPException(status_code=404, detail="Case not found")
-        
-    # Optional: Check if user belongs to same station as case (or district)
-    # This might already be covered by List Cases visibility, but strictly creating evidence 
-    # should probably be same station for Constables.
-    if current_user.station_name and case.police_station and current_user.station_name != case.police_station:
-         raise HTTPException(status_code=403, detail="Evidence upload restricted to case's Police Station.")
+    # Verify Case access (fail-closed jurisdiction check)
+    case = authorize_case_access(case_id, current_user, db)
 
     # Read file content
     content = await file.read()
     
-    # FIX: Validate file size
+    # Validate file size
     if len(content) > config.MAX_FILE_SIZE_BYTES:
         raise HTTPException(
             status_code=413, 
             detail=f"File too large. Maximum size: {config.MAX_FILE_SIZE_MB}MB"
         )
-    
-    # Calculate SHA-256
-    sha256_hash = hashlib.sha256(content).hexdigest()
-    
-    # Check if duplicate hash exists (deduplication or integrity check)
-    # optional: if db.query(models.Evidence).filter(models.Evidence.file_hash == sha256_hash).first(): ...
 
-    # Encrypt
-    encrypted_content = cipher_suite.encrypt(content)
+    # Validate magic bytes & anti-zip-bomb limits
+    is_safe, safety_err = validate_file_magic_and_zip(content, file_ext)
+    if not is_safe:
+        raise HTTPException(status_code=400, detail=safety_err)
     
-    # Save to disk
-    # FIX: Use enhanced filename sanitization
-    from backend.utils.validation import sanitize_filename
-    cleaned_filename = sanitize_filename(file.filename)
-    
-    # Filename: {hash}_{original_name} to avoid collisions and obscure basic names
-    safe_filename = f"{sha256_hash}_{cleaned_filename}"
-    file_path = os.path.join(UPLOAD_DIR, safe_filename)
-    
-    with open(file_path, "wb") as f:
-        f.write(encrypted_content)
+    # Calculate SHA-256, encrypt, and write in threadpool to avoid blocking event loop
+    def _encrypt_and_store() -> tuple[str, str, str]:
+        digest = hashlib.sha256(content).hexdigest()
+        encrypted_content = cipher_suite.encrypt(content)
+        cleaned = sanitize_filename(file.filename)
+        safe_name = f"{digest}_{cleaned}"
+        target_path = os.path.join(UPLOAD_DIR, safe_name)
+        with open(target_path, "wb") as f:
+            f.write(encrypted_content)
+        return digest, target_path, cleaned
+
+    sha256_hash, file_path, cleaned_filename = await run_in_threadpool(_encrypt_and_store)
         
     # Create DB Entry
     new_evidence = models.Evidence(
@@ -105,7 +99,7 @@ async def upload_evidence(
         file_type=file_type,
         file_path=file_path,
         file_hash=sha256_hash,
-        original_filename=file.filename,
+        original_filename=cleaned_filename,
         uploaded_by_id=current_user.id,
         # RBAC fields
         uploaded_by_rank=current_user.rank,
@@ -113,18 +107,50 @@ async def upload_evidence(
     )
     db.add(new_evidence)
     
-    # Audit Log
-    log = models.AuditLog(
+    # Hash-chained Audit Log
+    record_audit_log(
+        db,
         user_id=current_user.id,
         action="UPLOAD_EVIDENCE",
-        details=f"Uploaded {file.filename} (Hash: {sha256_hash}) to Case {case.fir_number}"
+        details=f"Uploaded {cleaned_filename} (Hash: {sha256_hash}) to Case {case.fir_number}",
     )
-    db.add(log)
     
     db.commit()
     db.refresh(new_evidence)
+
+    # Index CDR MSISDN/IMEI rows for Universal Search if tabular CDR
+    if file_ext in (".csv", ".xlsx", ".xls") or "CDR" in (file_type or "").upper():
+        await run_in_threadpool(index_cdr_bytes, db, case_id, new_evidence.id, content, cleaned_filename)
     
     return new_evidence
+
+
+@router.get("/case/{case_id}/bsa63-manifest")
+def export_bsa63_manifest(
+    case_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+):
+    """Export a Section 63(4)(c) BSA, 2023 electronic evidence hash manifest for a case."""
+    case = authorize_case_access(case_id, current_user, db)
+    evidence_rows = db.query(models.Evidence).filter(models.Evidence.case_id == case_id).all()
+    records = [
+        {
+            "id": ev.id,
+            "original_filename": ev.original_filename,
+            "file_type": ev.file_type,
+            "file_hash": ev.file_hash,
+            "uploaded_at": ev.uploaded_at,
+            "uploaded_by": ev.uploader.username if ev.uploader else "Unknown",
+            "verification_status": ev.verification_status,
+        }
+        for ev in evidence_rows
+    ]
+    return generate_bsa_63_manifest(
+        {"fir_number": case.fir_number, "police_station": case.police_station},
+        records,
+        generated_by=f"{current_user.username} ({(current_user.rank or current_user.role.value).upper()})",
+    )
 
 @router.get("/case/{case_id}", response_model=list[schemas.EvidenceResponse])
 def get_case_evidence(
@@ -132,10 +158,11 @@ def get_case_evidence(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user)
 ):
+    authorize_case_access(case_id, current_user, db)
     evidence = db.query(models.Evidence).filter(models.Evidence.case_id == case_id).all()
     return evidence
 
-# Optional: Download/Decrypt endpoint (Admin/SHO only?)
+# Download/Decrypt endpoint
 @router.get("/download/{evidence_id}")
 def download_evidence(
     evidence_id: int,
@@ -146,35 +173,7 @@ def download_evidence(
     if not evidence:
          raise HTTPException(status_code=404, detail="Evidence not found")
 
-    # FIX: Verify user has access to the case
-    case = db.query(models.Case).filter(models.Case.id == evidence.case_id).first()
-    if not case:
-        raise HTTPException(status_code=404, detail="Associated case not found")
-    
-    # Apply same RBAC logic as case viewing
-    role = current_user.role
-    has_access = False
-    
-    if role in [models.UserRole.DGP, models.UserRole.ADMIN]:
-        has_access = True
-    elif role == models.UserRole.IGP and current_user.zone_name == case.zone_name:
-        has_access = True
-    elif role == models.UserRole.DIG and current_user.range_name == case.range_name:
-        has_access = True
-    elif role == models.UserRole.SP and current_user.district_name == case.district_name:
-        has_access = True
-    elif role == models.UserRole.DY_SP and current_user.sub_division == case.sub_division:
-        has_access = True
-    elif role in [models.UserRole.CONSTABLE, models.UserRole.HEAD_CONSTABLE, 
-                  models.UserRole.SUB_INSPECTOR, models.UserRole.INSPECTOR]:
-        if current_user.station_name == case.police_station:
-            has_access = True
-    
-    if not has_access:
-        raise HTTPException(
-            status_code=403, 
-            detail="Access denied: You do not have permission to access this evidence"
-        )
+    authorize_case_access(evidence.case_id, current_user, db)
 
     # Decrypt
     with open(evidence.file_path, "rb") as f:
@@ -184,36 +183,23 @@ def download_evidence(
     
     # Return as stream/file
     from fastapi.responses import Response
+    safe_dl_name = sanitize_filename(evidence.original_filename)
     return Response(content=decrypted_data, media_type="application/octet-stream", headers={
-        "Content-Disposition": f"attachment; filename={evidence.original_filename}"
+        "Content-Disposition": f'attachment; filename="{safe_dl_name}"'
     })
 
 @router.get("/view/{evidence_id}")
 def view_evidence(
     evidence_id: int,
-    token: str, # Pass token as query param for src tags
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user)
 ):
-    # Manual Auth since it's a media request (img src, video src)
-    # We need to validate the token
-    from backend.utils import security
-    from jose import jwt, JWTError
-    
-    try:
-        payload = jwt.decode(token, security.SECRET_KEY, algorithms=[security.ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
-            raise HTTPException(status_code=401, detail="Invalid authentication")
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid authentication")
-        
-    user = db.query(models.User).filter(models.User.username == username).first()
-    if not user or not user.is_active:
-        raise HTTPException(status_code=401, detail="Invalid user")
-
     evidence = db.query(models.Evidence).filter(models.Evidence.id == evidence_id).first()
     if not evidence:
          raise HTTPException(status_code=404, detail="Evidence not found")
+
+    authorize_case_access(evidence.case_id, current_user, db)
+    user = current_user
 
     if not os.path.exists(evidence.file_path):
         raise HTTPException(status_code=404, detail="File not found on server")
@@ -231,13 +217,13 @@ def view_evidence(
     current_hash = hashlib.sha256(decrypted_data).hexdigest()
     if current_hash != evidence.file_hash:
         # Audit Tampering
-        log = models.AuditLog(
+        record_audit_log(
+            db,
             user_id=user.id,
             action="INTEGRITY_FAILURE",
-            details=f"Hash mismatch for Evidence #{evidence.id} ({evidence.original_filename})"
+            details=f"Hash mismatch for Evidence #{evidence.id} ({evidence.original_filename})",
+            commit=True,
         )
-        db.add(log)
-        db.commit()
         raise HTTPException(status_code=409, detail="Evidence Integrity Check Failed: File may have been tampered with.")
 
     # Determine MIME type
@@ -248,13 +234,14 @@ def view_evidence(
         media_type = "application/octet-stream"
 
     # Audit Log - View
-    log = models.AuditLog(
+    record_audit_log(
+        db,
         user_id=user.id,
         action="VIEW_EVIDENCE",
-        details=f"Viewed Evidence #{evidence.id} ({evidence.original_filename})"
+        details=f"Viewed Evidence #{evidence.id} ({evidence.original_filename})",
+        commit=True,
     )
-    db.add(log)
-    db.commit()
     
     from fastapi.responses import Response
-    return Response(content=decrypted_data, media_type=media_type, headers={"Content-Disposition": f"inline; filename=\"{evidence.original_filename}\""})
+    safe_view_name = sanitize_filename(evidence.original_filename)
+    return Response(content=decrypted_data, media_type=media_type, headers={"Content-Disposition": f'inline; filename="{safe_view_name}"'})

@@ -1,19 +1,17 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
+from sqlalchemy.orm import Session, joinedload
+from collections import defaultdict
 from backend.database import get_db
 from backend import models, schemas
 from backend.routers.auth import get_current_active_user
 from backend.utils import cdr_parser, risk_engine
+from backend.utils.cdr_indexer import index_cdr_bytes
+from backend.utils.rbac import authorize_case_access, get_accessible_case_ids
 from backend.routers.files import cipher_suite
 import os
 import re
 import io
-
-router = APIRouter(
-    prefix="/analysis",
-    tags=["analysis"]
-)
-
 
 router = APIRouter(
     prefix="/analysis",
@@ -26,10 +24,11 @@ def analyze_cdr(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user)
 ):
-    # Fetch Evidence
+    # Fetch Evidence & verify case jurisdiction
     evidence = db.query(models.Evidence).filter(models.Evidence.id == evidence_id).first()
     if not evidence:
         raise HTTPException(status_code=404, detail="Evidence not found")
+    authorize_case_access(evidence.case_id, current_user, db)
     
     # Decrypt File
     try:
@@ -44,6 +43,12 @@ def analyze_cdr(
     
     if "error" in analysis_result:
         raise HTTPException(status_code=400, detail=analysis_result["error"])
+
+    if (evidence.original_filename or "").lower().endswith((".csv", ".xlsx", ".xls")):
+        try:
+            index_cdr_bytes(db, evidence.case_id, evidence.id, decrypted_data, evidence.original_filename)
+        except Exception:
+            pass
         
     return analysis_result
 
@@ -66,6 +71,21 @@ def universal_search(
     """
     results = []
     query_lower = query.lower().strip()
+    accessible_case_ids = get_accessible_case_ids(current_user, db)
+    if accessible_case_ids is not None and not accessible_case_ids:
+        return {
+            "query": query,
+            "search_type": search_type,
+            "matches": [],
+            "count": 0,
+            "summary": {
+                "telecom_requests": 0,
+                "financial_entities": 0,
+                "case_records": 0,
+                "transaction_timeline": 0,
+                "evidence_files": 0,
+            },
+        }
     
     # Auto-detect search type if not specified
     if search_type == "auto":
@@ -83,9 +103,12 @@ def universal_search(
     
     # 1. Search in Telecom Requests (Mobile Numbers)
     if search_type in ["mobile", "auto"]:
-        requests = db.query(models.TelecomRequest).filter(
+        req_q = db.query(models.TelecomRequest).filter(
             models.TelecomRequest.mobile_number.ilike(f"%{query}%")
-        ).all()
+        )
+        if accessible_case_ids is not None:
+            req_q = req_q.filter(models.TelecomRequest.case_id.in_(accessible_case_ids))
+        requests = req_q.all()
         
         for req in requests:
             results.append({
@@ -101,12 +124,15 @@ def universal_search(
     
     # 2. Search in Financial Entities (UPI IDs, Bank Accounts)
     if search_type in ["upi", "account", "auto"]:
-        financial_entities = db.query(models.FinancialEntity).filter(
+        fin_q = db.query(models.FinancialEntity).filter(
             (models.FinancialEntity.upi_id.ilike(f"%{query}%")) |
             (models.FinancialEntity.account_number.ilike(f"%{query}%")) |
             (models.FinancialEntity.account_holder_name.ilike(f"%{query}%")) |
             (models.FinancialEntity.bank_name.ilike(f"%{query}%"))
-        ).all()
+        )
+        if accessible_case_ids is not None:
+            fin_q = fin_q.filter(models.FinancialEntity.case_id.in_(accessible_case_ids))
+        financial_entities = fin_q.all()
         
         for entity in financial_entities:
             match_field = "Unknown"
@@ -137,10 +163,13 @@ def universal_search(
     
     # 3. Search in Cases (FIR Number, Description)
     if search_type in ["fir", "name", "auto"]:
-        cases = db.query(models.Case).filter(
+        case_q = db.query(models.Case).filter(
             (models.Case.fir_number.ilike(f"%{query}%")) |
             (models.Case.description.ilike(f"%{query}%"))
-        ).all()
+        )
+        if accessible_case_ids is not None:
+            case_q = case_q.filter(models.Case.id.in_(accessible_case_ids))
+        cases = case_q.all()
         
         for case in cases:
             match_field = "FIR Number" if query_lower in case.fir_number.lower() else "Case Description"
@@ -159,9 +188,12 @@ def universal_search(
     
     # 4. Search in Transaction Timeline (narrative text search)
     if search_type in ["name", "auto"]:
-        transactions = db.query(models.TransactionTimeline).filter(
+        txn_q = db.query(models.TransactionTimeline).filter(
             models.TransactionTimeline.narrative.ilike(f"%{query}%")
-        ).all()
+        )
+        if accessible_case_ids is not None:
+            txn_q = txn_q.filter(models.TransactionTimeline.case_id.in_(accessible_case_ids))
+        transactions = txn_q.all()
         
         for txn in transactions:
             results.append({
@@ -177,10 +209,13 @@ def universal_search(
             })
     
     # 5. Search in Evidence Files (CAF, CDR metadata)
-    evidence_files = db.query(models.Evidence).filter(
+    ev_q = db.query(models.Evidence).filter(
         (models.Evidence.original_filename.ilike(f"%{query}%")) |
         (models.Evidence.file_type.ilike(f"%{query}%"))
-    ).all()
+    )
+    if accessible_case_ids is not None:
+        ev_q = ev_q.filter(models.Evidence.case_id.in_(accessible_case_ids))
+    evidence_files = ev_q.all()
     
     for evidence in evidence_files:
         results.append({
@@ -197,11 +232,47 @@ def universal_search(
             "verification_status": evidence.verification_status
         })
     
-    # Remove duplicates based on case_id and source
+    # 6. Search in CDR Evidence Index (MSISDN / IMEI across parsed CDRs)
+    cdr_q = (
+        db.query(models.CdrIndexEntry)
+        .options(
+            joinedload(models.CdrIndexEntry.case),
+            joinedload(models.CdrIndexEntry.evidence),
+        )
+        .filter(
+            (models.CdrIndexEntry.msisdn.ilike(f"%{query}%")) |
+            (models.CdrIndexEntry.imei.ilike(f"%{query}%"))
+        )
+    )
+    if accessible_case_ids is not None:
+        cdr_q = cdr_q.filter(models.CdrIndexEntry.case_id.in_(accessible_case_ids))
+
+    for entry in cdr_q.all():
+        matched_val = (
+            entry.msisdn
+            if (entry.msisdn and query_lower in entry.msisdn.lower())
+            else (entry.imei or entry.msisdn)
+        )
+        results.append({
+            "source": "CDR Evidence Index",
+            "case_id": entry.case_id,
+            "fir_number": entry.case.fir_number if entry.case else "N/A",
+            "match_type": f"CDR ({entry.call_count} calls)",
+            "matched_value": matched_val,
+            "msisdn": entry.msisdn,
+            "imei": entry.imei,
+            "call_count": entry.call_count,
+            "file_id": entry.evidence_id,
+            "file_name": entry.evidence.original_filename if entry.evidence else "N/A",
+            "case_type": entry.case.case_type.value if entry.case and entry.case.case_type else "N/A",
+            "status": entry.case.status if entry.case else "N/A",
+        })
+
+    # Remove duplicates based on case_id, source, match_type, and matched_value
     unique_results = []
     seen = set()
     for result in results:
-        key = (result["case_id"], result["source"], result["match_type"])
+        key = (result["case_id"], result["source"], result["match_type"], result.get("matched_value"))
         if key not in seen:
             seen.add(key)
             unique_results.append(result)
@@ -216,7 +287,8 @@ def universal_search(
             "financial_entities": sum(1 for r in unique_results if r["source"] == "Financial Entity"),
             "case_records": sum(1 for r in unique_results if r["source"] == "Case Record"),
             "transaction_timeline": sum(1 for r in unique_results if r["source"] == "Transaction Timeline"),
-            "evidence_files": sum(1 for r in unique_results if r["source"] == "Evidence File")
+            "evidence_files": sum(1 for r in unique_results if r["source"] == "Evidence File"),
+            "cdr_evidence_index": sum(1 for r in unique_results if r["source"] == "CDR Evidence Index")
         }
     }
 
@@ -247,19 +319,25 @@ def get_comprehensive_investigation_data(
     }
     
     case_ids = set()
+    accessible_case_ids = get_accessible_case_ids(current_user, db)
     
-    # 1. Collect all Case IDs from various matches
+    # 1. Collect all Case IDs from various matches (scoped to user's jurisdiction)
     # Match by Case Text
-    text_cases = db.query(models.Case).filter(
+    text_q = db.query(models.Case).filter(
         (models.Case.fir_number.ilike(f"%{identifier}%")) |
         (models.Case.description.ilike(f"%{identifier}%"))
-    ).all()
-    for c in text_cases: case_ids.add(c.id)
+    )
+    if accessible_case_ids is not None:
+        text_q = text_q.filter(models.Case.id.in_(accessible_case_ids)) if accessible_case_ids else text_q.filter(False)
+    for c in text_q.all(): case_ids.add(c.id)
     
     # Match by Telecom
-    telecom_requests = db.query(models.TelecomRequest).filter(
+    tel_q = db.query(models.TelecomRequest).filter(
         models.TelecomRequest.mobile_number.ilike(f"%{identifier}%")
-    ).all()
+    )
+    if accessible_case_ids is not None:
+        tel_q = tel_q.filter(models.TelecomRequest.case_id.in_(accessible_case_ids)) if accessible_case_ids else tel_q.filter(False)
+    telecom_requests = tel_q.all()
     for req in telecom_requests:
         case_ids.add(req.case_id)
         investigation_data["telecom_requests"].append({
@@ -274,11 +352,14 @@ def get_comprehensive_investigation_data(
         })
     
     # Match by Financial
-    financial_entities = db.query(models.FinancialEntity).filter(
+    fin_q = db.query(models.FinancialEntity).filter(
         (models.FinancialEntity.upi_id.ilike(f"%{identifier}%")) |
         (models.FinancialEntity.account_number.ilike(f"%{identifier}%")) |
         (models.FinancialEntity.account_holder_name.ilike(f"%{identifier}%"))
-    ).all()
+    )
+    if accessible_case_ids is not None:
+        fin_q = fin_q.filter(models.FinancialEntity.case_id.in_(accessible_case_ids)) if accessible_case_ids else fin_q.filter(False)
+    financial_entities = fin_q.all()
     for entity in financial_entities:
         case_ids.add(entity.case_id)
         investigation_data["financial_entities"].append({
@@ -434,6 +515,7 @@ def get_comprehensive_investigation_data(
 @router.get("/network-graph")
 def get_network_graph(
     identifier: str = None,
+    max_nodes: int = 250,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user)
 ):
@@ -441,26 +523,34 @@ def get_network_graph(
     GENERATE INTELLIGENCE NETWORK MAP!
     Builds a JSON of Nodes and Edges connecting Cases, Mobiles, and Accounts.
     """
+    max_nodes = max(1, min(max_nodes, 250))
     nodes = []
     edges = []
     node_ids = set()
     edge_keys = set()
-    
+    truncated = False
+
     def add_node(id, label, type, color="#97C2FC", size=20):
-        if id not in node_ids:
-            nodes.append({
-                "id": id,
-                "label": str(label), # Ensure string
-                "group": type,
-                "color": color,
-                "size": size,
-                "font": {"size": 14, "color": "#343a40", "face": "Inter"}
-            })
-            node_ids.add(id)
+        nonlocal truncated
+        if id in node_ids:
+            return True
+        if len(nodes) >= max_nodes:
+            truncated = True
+            return False
+        nodes.append({
+            "id": id,
+            "label": str(label), # Ensure string
+            "group": type,
+            "color": color,
+            "size": size,
+            "font": {"size": 14, "color": "#343a40", "face": "Inter"}
+        })
+        node_ids.add(id)
+        return True
 
     def add_edge(from_node, to_node, label="", color="#848484"):
         key = tuple(sorted([str(from_node), str(to_node)]))
-        if key not in edge_keys and from_node != to_node:
+        if from_node in node_ids and to_node in node_ids and key not in edge_keys and from_node != to_node:
             edges.append({
                 "from": from_node,
                 "to": to_node,
@@ -470,68 +560,97 @@ def get_network_graph(
             })
             edge_keys.add(key)
 
-    # Initial search to find related cases
+    # Initial search to find related cases (scoped to user's jurisdiction)
     found_case_ids = set()
+    accessible_case_ids = get_accessible_case_ids(current_user, db)
     
     if identifier:
+        if accessible_case_ids is not None and not accessible_case_ids:
+            add_node(f"SEARCH_{identifier}", identifier, "search", "#6c757d", 30)
+            return {"nodes": nodes, "edges": edges, "truncated": truncated}
+
         # 1. Search Telecom Requests
-        requests = db.query(models.TelecomRequest).filter(models.TelecomRequest.mobile_number.ilike(f"%{identifier}%")).all()
-        for r in requests:
+        req_q = db.query(models.TelecomRequest).filter(models.TelecomRequest.mobile_number.ilike(f"%{identifier}%"))
+        if accessible_case_ids is not None:
+            req_q = req_q.filter(models.TelecomRequest.case_id.in_(accessible_case_ids))
+        for r in req_q.all():
             found_case_ids.add(r.case_id)
             
         # 2. Search Financial Entities
-        financials = db.query(models.FinancialEntity).filter(
+        fin_q = db.query(models.FinancialEntity).filter(
             (models.FinancialEntity.upi_id.ilike(f"%{identifier}%")) |
             (models.FinancialEntity.account_number.ilike(f"%{identifier}%"))
-        ).all()
-        for f in financials:
+        )
+        if accessible_case_ids is not None:
+            fin_q = fin_q.filter(models.FinancialEntity.case_id.in_(accessible_case_ids))
+        for f in fin_q.all():
             found_case_ids.add(f.case_id)
             
         # 3. Search Cases directly
-        cases = db.query(models.Case).filter(models.Case.fir_number.ilike(f"%{identifier}%")).all()
-        for c in cases:
+        case_q = db.query(models.Case).filter(models.Case.fir_number.ilike(f"%{identifier}%"))
+        if accessible_case_ids is not None:
+            case_q = case_q.filter(models.Case.id.in_(accessible_case_ids))
+        for c in case_q.all():
             found_case_ids.add(c.id)
 
     # If no identifier or no matches, return empty or default view
     if not found_case_ids:
         # Just return the searched node itself if nothing found
         if identifier: 
-             add_node(f"SEARCH_{identifier}", identifier, "search", "#6c757d", 30)
-        return {"nodes": nodes, "edges": edges}
+            add_node(f"SEARCH_{identifier}", identifier, "search", "#6c757d", 30)
+        return {"nodes": nodes, "edges": edges, "truncated": truncated}
 
-    # --- EXPANSION LOGIC ---
-    # Fetch all confirmed cases
+    # --- EXPANSION LOGIC (batched to eliminate N+1 queries) ---
     all_cases = db.query(models.Case).filter(models.Case.id.in_(found_case_ids)).all()
-    
+    all_reqs = db.query(models.TelecomRequest).filter(models.TelecomRequest.case_id.in_(found_case_ids)).all()
+    all_fins = db.query(models.FinancialEntity).filter(models.FinancialEntity.case_id.in_(found_case_ids)).all()
+
+    reqs_by_case = defaultdict(list)
+    for r in all_reqs:
+        reqs_by_case[r.case_id].append(r)
+
+    fins_by_case = defaultdict(list)
+    for f in all_fins:
+        fins_by_case[f.case_id].append(f)
+
     for case in all_cases:
         cid = f"CASE_{case.id}"
-        add_node(cid, f"FIR: {case.fir_number}", "case", "#4CAF50", 40) # Larger node for Case
-        
+        if not add_node(cid, f"FIR: {case.fir_number}", "case", "#4CAF50", 40):
+            break
+
         # Add Mobiles linked to this Case
-        case_reqs = db.query(models.TelecomRequest).filter(models.TelecomRequest.case_id == case.id).all()
-        for r in case_reqs:
+        for r in reqs_by_case.get(case.id, []):
             mid = f"MOB_{r.mobile_number}"
             color = "#FF9800" # Orange for mobile
-            if identifier and str(identifier) in r.mobile_number: color = "#d32f2f" # Red if it matches search
-            
-            add_node(mid, r.mobile_number, "mobile", color)
+            if identifier and str(identifier) in r.mobile_number:
+                color = "#d32f2f" # Red if it matches search
+
+            if not add_node(mid, r.mobile_number, "mobile", color):
+                break
             add_edge(cid, mid, "suspect")
-            
+
+        if truncated:
+            break
+
         # Add Financials linked to this Case
-        case_fins = db.query(models.FinancialEntity).filter(models.FinancialEntity.case_id == case.id).all()
-        for f in case_fins:
+        for f in fins_by_case.get(case.id, []):
             val = f.upi_id or f.account_number
             fid = f"FIN_{val}"
             color = "#2196F3" # Blue for finance
-            if identifier and (str(identifier) in (f.upi_id or "") or str(identifier) in (f.account_number or "")): 
+            if identifier and (str(identifier) in (f.upi_id or "") or str(identifier) in (f.account_number or "")):
                 color = "#d32f2f" # Red if matches search
-                
-            add_node(fid, val, "financial", color)
+
+            if not add_node(fid, val, "financial", color):
+                break
             add_edge(cid, fid, "money_trail")
+
+        if truncated:
+            break
 
     return {
         "nodes": nodes,
-        "edges": edges
+        "edges": edges,
+        "truncated": truncated
     }
 
 
@@ -558,44 +677,38 @@ async def file_based_search(
     """
     try:
         content = await file.read()
-        file_extension = file.filename.split('.')[-1].lower()
-        
-        identifiers = []
-        
-        # Process based on file type
-        if file_extension in ['xlsx', 'xls', 'csv']:
-            # Excel/CSV Processing
-            try:
+        file_extension = (file.filename or "").split('.')[-1].lower()
+
+        def _extract_identifiers() -> list[str]:
+            extracted = []
+            if file_extension in ['xlsx', 'xls', 'csv']:
                 import pandas as pd
-                
                 if file_extension == 'csv':
                     df = pd.read_csv(io.BytesIO(content))
                 else:
                     df = pd.read_excel(io.BytesIO(content))
-                
-                # Extract all data as strings
                 for col in df.columns:
                     for value in df[col].dropna():
                         if value:
-                            identifiers.append(str(value).strip())
-            except Exception as e:
-                raise HTTPException(status_code=400, detail=f"Error processing Excel/CSV: {str(e)}")
-        
-        elif file_extension == 'pdf':
-            # PDF Processing
-            try:
+                            extracted.append(str(value).strip())
+            elif file_extension == 'pdf':
                 import PyPDF2
                 pdf_reader = PyPDF2.PdfReader(io.BytesIO(content))
-                text = ""
-                for page in pdf_reader.pages:
-                    text += page.extract_text()
-                
-                # Extract identifiers from text
-                identifiers = text.split()
-            except Exception as e:
-                raise HTTPException(status_code=400, detail=f"Error processing PDF: {str(e)}")
-        else:
-            raise HTTPException(status_code=400, detail="Unsupported file format. Use Excel, CSV, or PDF")
+                text = "".join((page.extract_text() or "") for page in pdf_reader.pages)
+                extracted = text.split()
+            else:
+                raise ValueError("UNSUPPORTED_FORMAT")
+            return extracted
+
+        try:
+            identifiers = await run_in_threadpool(_extract_identifiers)
+        except ValueError as ve:
+            if str(ve) == "UNSUPPORTED_FORMAT":
+                raise HTTPException(status_code=400, detail="Unsupported file format. Use Excel, CSV, or PDF")
+            raise
+        except Exception as e:
+            label = "PDF" if file_extension == "pdf" else "Excel/CSV"
+            raise HTTPException(status_code=400, detail=f"Error processing {label}: {str(e)}")
         
         # Extract phone numbers, UPI IDs, account numbers using regex
         extracted_data = {

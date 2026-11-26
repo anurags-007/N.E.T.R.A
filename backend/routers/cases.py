@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from backend.database import get_db
 from backend import models, schemas
 from backend.routers.auth import get_current_active_user
+from backend.utils.rbac import apply_jurisdiction_filter, authorize_case_access, GLOBAL_ROLES
 
 router = APIRouter(
     prefix="/cases",
@@ -28,6 +29,13 @@ def create_case(
             status_code=403, 
             detail="Only Constables, Head Constables, and Sub-Inspectors can create new cases."
         )
+
+    # Fail closed if station-scoped creator has no assigned station or tries creating in another station
+    if current_user.role not in GLOBAL_ROLES:
+        if not current_user.station_name:
+            raise HTTPException(status_code=403, detail="Jurisdiction not assigned (station).")
+        if case.police_station != current_user.station_name:
+            raise HTTPException(status_code=403, detail="Cannot create case outside your assigned Police Station.")
 
     # Check if FIR already exists
     db_case = db.query(models.Case).filter(models.Case.fir_number == case.fir_number).first()
@@ -61,44 +69,7 @@ def read_cases(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user)
 ):
-    query = db.query(models.Case)
-    
-    # RBAC Filtering
-    role = current_user.role
-    
-    # Level 1: Station Level (Constable, Head Constable, SI, SHO)
-    if role in [models.UserRole.CONSTABLE, models.UserRole.HEAD_CONSTABLE, models.UserRole.SUB_INSPECTOR, models.UserRole.INSPECTOR]:
-        if current_user.station_name:
-            query = query.filter(models.Case.police_station == current_user.station_name)
-    
-    # Level 2: Sub-Division (CO / DySP)
-    elif role == models.UserRole.DY_SP:
-        if current_user.sub_division:
-            query = query.filter(models.Case.sub_division == current_user.sub_division)
-            
-    # Level 2: District (SP)
-    elif role == models.UserRole.SP:
-        if current_user.district_name:
-            query = query.filter(models.Case.district_name == current_user.district_name)
-
-    # Level 3: Range (DIG)
-    elif role == models.UserRole.DIG:
-        if current_user.range_name:
-            query = query.filter(models.Case.range_name == current_user.range_name)
-            
-    # Level 3: Zone (IGP)
-    elif role == models.UserRole.IGP:
-        if current_user.zone_name:
-            query = query.filter(models.Case.zone_name == current_user.zone_name)
-            
-    # Level 3: State (DGP)
-    elif role == models.UserRole.DGP:
-        pass # See all
-        
-    # Legacy/Admin
-    elif role in [models.UserRole.ADMIN, models.UserRole.OFFICER]:
-        pass # Allow visibility for now
-        
+    query = apply_jurisdiction_filter(db.query(models.Case), current_user, models.Case)
     cases = query.order_by(models.Case.created_at.desc()).offset(skip).limit(limit).all()
     return cases
 
@@ -108,32 +79,7 @@ def read_case(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user)
 ):
-    case = db.query(models.Case).filter(models.Case.id == case_id).first()
-    if case is None:
-        raise HTTPException(status_code=404, detail="Case not found")
-        
-    # Check RBAC for viewing specific case
-    if current_user.role in [models.UserRole.CONSTABLE, models.UserRole.HEAD_CONSTABLE, models.UserRole.SUB_INSPECTOR, models.UserRole.INSPECTOR]:
-        if case.police_station != current_user.station_name:
-             raise HTTPException(status_code=403, detail="Access denied. Case belongs to another jurisdiction.")
-             
-    elif current_user.role == models.UserRole.DY_SP:
-        if case.sub_division != current_user.sub_division:
-             raise HTTPException(status_code=403, detail="Access denied. Case outside sub-division.")
-
-    elif current_user.role == models.UserRole.SP:
-        if case.district_name != current_user.district_name:
-             raise HTTPException(status_code=403, detail="Access denied. Case outside district.")
-             
-    elif current_user.role == models.UserRole.DIG:
-        if case.range_name != current_user.range_name:
-             raise HTTPException(status_code=403, detail="Access denied. Case outside range.")
-             
-    elif current_user.role == models.UserRole.IGP:
-        if case.zone_name != current_user.zone_name:
-             raise HTTPException(status_code=403, detail="Access denied. Case outside zone.")
-             
-    return case
+    return authorize_case_access(case_id, current_user, db)
 
 @router.patch("/{case_id}/status", response_model=schemas.CaseResponse)
 def update_case_status(
@@ -146,13 +92,7 @@ def update_case_status(
     if current_user.role in [models.UserRole.CONSTABLE, models.UserRole.HEAD_CONSTABLE]:
         raise HTTPException(status_code=403, detail="Not authorized to update case status.")
         
-    case = db.query(models.Case).filter(models.Case.id == case_id).first()
-    if not case:
-        raise HTTPException(status_code=404, detail="Case not found")
-        
-    # Additional Check: Ownership or Superior
-    # Simple check: If not owner and not SHO/SP+, block?
-    # For now, trust the role check + station scope (if we enforced read scope, they can only access visible cases)
+    case = authorize_case_access(case_id, current_user, db)
     
     case.status = status_update.status
     db.commit()

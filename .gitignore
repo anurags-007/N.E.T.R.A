@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+venv/
+.venv/
+
+# Environment & Secrets
+.env
+
+# Runtime Databases, Uploads & Generated PDFs
+data/police_caf.db*
+data/secure_uploads/
+data/generated_requests/
+*.log
+
+# Large Binary & Downloaded Raw Datasets (keep india_towers.csv & dot_22field_cdr_sample.csv tracked)
+data/geo/*.mmdb
+data/datasets/*.csv
+
+# OS Files
+.DS_Store
+Thumbs.db

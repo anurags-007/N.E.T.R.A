@@ -6,6 +6,13 @@ if (!token) {
     window.location.href = 'index.html';
 }
 
+document.getElementById('logoutBtn')?.addEventListener('click', async (e) => {
+    e.preventDefault();
+    await API.logout(token);
+    localStorage.removeItem('token');
+    window.location.href = 'index.html';
+});
+
 async function init() {
     try {
         const user = await API.getMe(token);
@@ -269,7 +276,9 @@ document.getElementById('globalSearchForm').addEventListener('submit', async (e)
                     'Telecom Request': 'bi-telephone',
                     'Financial Entity': 'bi-currency-rupee',
                     'Case Record': 'bi-folder',
-                    'Transaction Timeline': 'bi-clock-history'
+                    'Transaction Timeline': 'bi-clock-history',
+                    'Evidence File': 'bi-file-earmark-lock',
+                    'CDR Evidence Index': 'bi-file-earmark-spreadsheet'
                 };
 
                 groupDiv.innerHTML = `

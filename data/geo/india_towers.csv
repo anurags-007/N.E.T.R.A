@@ -1,0 +1,219 @@
+mcc,mnc,lac,cell_id,operator,circle,lat,lon
+404,01,1000,20000,Haryana,Haryana,29.0588,76.0856
+404,02,1007,20013,Punjab,Punjab,30.7348,76.7809
+404,03,1014,20026,Himachal Pradesh,Himachal Pradesh,31.1078,77.1764
+404,04,1021,20039,Delhi & NCR,Delhi NCR,28.6184,77.2135
+404,05,1028,20052,Gujarat,Gujarat,23.0285,72.5774
+404,07,1035,20065,Andhra Pradesh and Telangana,Andhra Pradesh / Telangana,17.3925,78.4942
+404,09,1042,20078,Assam,Assam,26.1535,91.7452
+404,10,1049,20091,Delhi & NCR,Delhi NCR,28.6139,77.209
+404,11,1056,20104,Delhi & NCR,Delhi NCR,28.6154,77.2105
+404,12,1063,20117,Haryana,Haryana,29.0618,76.0886
+404,13,1070,20130,Andhra Pradesh and Telangana,Andhra Pradesh / Telangana,17.3895,78.4912
+404,14,1077,20143,Punjab,Punjab,30.7393,76.7854
+404,15,1084,20156,Uttar Pradesh (East),UP East / West,26.8542,80.9537
+404,16,1091,20169,North East,India Telecom Circle,28.5445,77.4
+404,17,1098,20182,West Bengal,West Bengal,22.9868,87.855
+404,18,1105,20195,Himachal Pradesh,Himachal Pradesh,31.1063,77.1749
+404,19,1112,20208,Kerala,Kerala,9.9342,76.2703
+404,20,1119,20221,Mumbai,Mumbai,19.0805,72.8822
+404,21,1126,20234,Mumbai,Mumbai,19.082,72.8837
+404,22,1133,20247,Maharashtra & Goa,Maharashtra,19.0835,72.8852
+404,23,1140,20260,West Bengal,West Bengal,22.9958,87.864
+404,24,1147,20273,Gujarat,Gujarat,23.0225,72.5714
+404,25,1154,20286,Bihar,Bihar / Jharkhand,25.5956,85.1391
+404,27,1161,20299,Maharashtra & Goa,Maharashtra,19.079,72.8807
+404,28,1168,20312,Odisha,Odisha,20.3006,85.829
+404,29,1175,20325,Assam,Assam,26.1505,91.7422
+404,30,1182,20338,Kolkata,Kolkata,22.5801,88.3714
+404,31,1189,20351,Kolkata,Kolkata,22.5816,88.3729
+404,34,1196,20364,Haryana,Haryana,29.0588,76.0856
+404,35,1203,20377,Himachal Pradesh,Himachal Pradesh,31.1063,77.1749
+404,36,1210,20390,Bihar & Jharkhand,Bihar / Jharkhand,25.5971,85.1406
+404,37,1217,20403,Jammu & Kashmir,Jammu & Kashmir,34.0882,74.8018
+404,38,1224,20416,Assam,Assam,26.1505,91.7422
+404,40,1231,20429,Chennai,Chennai,13.0902,80.2782
+404,41,1238,20442,Chennai,Chennai,13.0917,80.2797
+404,42,1245,20455,Tamil Nadu,Tamil Nadu,13.0827,80.2707
+404,43,1252,20468,Tamil Nadu,Tamil Nadu,13.0842,80.2722
+404,44,1259,20481,Karnataka,Karnataka,12.9746,77.5976
+404,45,1266,20494,Karnataka,Karnataka,12.9761,77.5991
+404,46,1273,20507,Kerala,Kerala,9.9372,76.2733
+404,48,1280,20520,Unknown,India Telecom Circle,28.543,77.3985
+404,49,1287,20533,Andhra Pradesh and Telangana,Andhra Pradesh / Telangana,17.394,78.4957
+404,50,1294,20546,North East,India Telecom Circle,28.5355,77.391
+404,51,1301,20559,Himachal Pradesh,Himachal Pradesh,31.1063,77.1749
+404,52,1308,20572,Odisha,Odisha,20.2991,85.8275
+404,53,1315,20585,Punjab,Punjab,30.7378,76.7839
+404,54,1322,20598,Uttar Pradesh (West),UP East / West,26.8527,80.9522
+404,55,1329,20611,Uttar Pradesh (East),UP East / West,26.8542,80.9537
+404,56,1336,20624,Uttar Pradesh (West),UP East / West,26.8557,80.9552
+404,57,1343,20637,Gujarat,Gujarat,23.0225,72.5714
+404,58,1350,20650,Madhya Pradesh & Chhattisgarh,Madhya Pradesh,23.2614,77.4141
+404,59,1357,20663,Rajasthan,Rajasthan,26.9154,75.7903
+404,60,1364,20676,Rajasthan,Rajasthan,26.9169,75.7918
+404,62,1371,20689,Jammu & Kashmir,Jammu & Kashmir,34.0897,74.8033
+404,64,1378,20702,Chennai,Chennai,13.0902,80.2782
+404,66,1385,20715,Maharashtra & Goa,Maharashtra,19.085,72.8867
+404,67,1392,20728,Madhya Pradesh & Chhattisgarh,Madhya Pradesh,23.2599,77.4126
+404,68,1399,20741,Delhi & NCR,Delhi NCR,28.6154,77.2105
+404,69,1406,20754,Mumbai,Mumbai,19.079,72.8807
+404,70,1413,20767,Rajasthan,Rajasthan,26.9169,75.7918
+404,71,1420,20780,Karnataka (Bangalore),Karnataka,12.9776,77.6006
+404,72,1427,20793,Kerala,Kerala,9.9387,76.2748
+404,73,1434,20806,Andhra Pradesh and Telangana,Andhra Pradesh / Telangana,17.394,78.4957
+404,74,1441,20819,West Bengal,West Bengal,22.9868,87.855
+404,75,1448,20832,Bihar,Bihar / Jharkhand,25.5956,85.1391
+404,76,1455,20845,Odisha,Odisha,20.2991,85.8275
+404,77,1462,20858,North East,India Telecom Circle,28.54,77.3955
+404,78,1469,20871,Madhya Pradesh & Chattishgarh,Madhya Pradesh,23.2659,77.4186
+404,79,1476,20884,Andaman Nicobar,India Telecom Circle,28.543,77.3985
+404,80,1483,20897,Tamil Nadu,Tamil Nadu,13.0917,80.2797
+404,81,1490,20910,Kolkata,Kolkata,22.5726,88.3639
+404,82,1497,20923,Himachal Pradesh,Himachal Pradesh,31.1063,77.1749
+404,83,1504,20936,Kolkata,Kolkata,22.5756,88.3669
+404,84,1511,20949,Chennai,Chennai,13.0872,80.2752
+404,85,1518,20962,West Bengal,West Bengal,22.9928,87.861
+404,86,1525,20975,Karnataka,Karnataka,12.9791,77.6021
+404,87,1532,20988,Rajasthan,Rajasthan,26.9214,75.7963
+404,88,1539,21001,Punjab,Punjab,30.7333,76.7794
+404,89,1546,21014,Uttar Pradesh (East),UP East / West,26.8482,80.9477
+404,90,1553,21027,Maharashtra,Maharashtra,19.079,72.8807
+404,91,1560,21040,Kolkata,Kolkata,22.5771,88.3684
+404,92,1567,21053,Mumbai,Mumbai,19.082,72.8837
+404,93,1574,21066,Madhya Pradesh,Madhya Pradesh,23.2674,77.4201
+404,94,1581,21079,Tamil Nadu,Tamil Nadu,13.0917,80.2797
+404,95,1588,21092,Kerala,Kerala,9.9312,76.2673
+404,96,1595,21105,Haryana,Haryana,29.0603,76.0871
+404,97,1602,21118,Uttar Pradesh (West),UP East / West,26.8497,80.9492
+404,98,1609,21131,Gujarat,Gujarat,23.027,72.5759
+405,01,1616,21144,Andhra Pradesh and Telangana,Andhra Pradesh / Telangana,17.391,78.4927
+405,025,1623,21157,Andhra Pradesh and Telangana,Andhra Pradesh / Telangana,17.3925,78.4942
+405,026,1630,21170,Assam,Assam,26.1535,91.7452
+405,027,1637,21183,Bihar/Jharkhand,Bihar / Jharkhand,25.5941,85.1376
+405,028,1644,21196,Chennai,Chennai,13.0842,80.2722
+405,029,1651,21209,Delhi,Delhi NCR,28.6169,77.212
+405,03,1658,21222,Bihar,Bihar / Jharkhand,25.5986,85.1421
+405,030,1665,21235,Gujarat,Gujarat,23.0285,72.5774
+405,031,1672,21248,Haryana,Haryana,29.0663,76.0931
+405,032,1679,21261,Himachal Pradesh,Himachal Pradesh,31.1138,77.1824
+405,033,1686,21274,Jammu & Kashmir,Jammu & Kashmir,34.0837,74.7973
+405,034,1693,21287,Karnataka,Karnataka,12.9731,77.5961
+405,035,1700,21300,Kerala,Kerala,9.9342,76.2703
+405,036,1707,21313,Kolkata,Kolkata,22.5771,88.3684
+405,037,1714,21326,Maharashtra & Goa,Maharashtra,19.082,72.8837
+405,038,1721,21339,Madhya Pradesh,Madhya Pradesh,23.2674,77.4201
+405,039,1728,21352,Mumbai,Mumbai,19.085,72.8867
+405,04,1735,21365,Chennai,Chennai,13.0827,80.2707
+405,041,1742,21378,Odisha,Odisha,20.2976,85.826
+405,042,1749,21391,Punjab,Punjab,30.7363,76.7824
+405,043,1756,21404,Rajasthan,Rajasthan,26.9169,75.7918
+405,044,1763,21417,Tamil Nadu including Chennai,Tamil Nadu,13.0887,80.2767
+405,045,1770,21430,Uttar Pradesh (East),UP East / West,26.8542,80.9537
+405,046,1777,21443,Uttar Pradesh (West) & Uttarakhand,UP East / West,26.8557,80.9552
+405,047,1784,21456,West Bengal,West Bengal,22.9868,87.855
+405,05,1791,21469,Delhi & NCR,Delhi NCR,28.6154,77.2105
+405,06,1798,21482,Gujarat,Gujarat,23.0255,72.5744
+405,07,1805,21495,Haryana,Haryana,29.0633,76.0901
+405,08,1812,21508,Himachal Pradesh,Himachal Pradesh,31.1108,77.1794
+405,09,1819,21521,Jammu & Kashmir,Jammu & Kashmir,34.0912,74.8048
+405,10,1826,21534,Karnataka,Karnataka,12.9806,77.6036
+405,11,1833,21547,Kerala,Kerala,9.9312,76.2673
+405,12,1840,21560,Kolkata,Kolkata,22.5741,88.3654
+405,13,1847,21573,Maharashtra & Goa,Maharashtra,19.079,72.8807
+405,14,1854,21586,Madhya Pradesh,Madhya Pradesh,23.2644,77.4171
+405,15,1861,21599,Mumbai,Mumbai,19.082,72.8837
+405,17,1868,21612,Odisha,Odisha,20.3036,85.832
+405,18,1875,21625,Punjab,Punjab,30.7423,76.7884
+405,19,1882,21638,Rajasthan,Rajasthan,26.9124,75.7873
+405,20,1889,21651,Tamil Nadu,Tamil Nadu,13.0842,80.2722
+405,21,1896,21664,Uttar Pradesh (East),UP East / West,26.8497,80.9492
+405,22,1903,21677,Uttar Pradesh (West),UP East / West,26.8512,80.9507
+405,23,1910,21690,West Bengal,West Bengal,22.9928,87.861
+405,51,1917,21703,West Bengal,West Bengal,22.9943,87.8625
+405,52,1924,21716,Bihar & Jharkhand,Bihar / Jharkhand,25.6031,85.1466
+405,53,1931,21729,Odisha,Odisha,20.2961,85.8245
+405,54,1938,21742,Uttar Pradesh (East),UP East / West,26.8482,80.9477
+405,55,1945,21755,Jammu & Kashmir,Jammu & Kashmir,34.0867,74.8003
+405,56,1952,21768,Assam,Assam,26.149,91.7407
+405,66,1959,21781,Uttar Pradesh (West),UP East / West,26.8527,80.9522
+405,67,1966,21794,West Bengal,West Bengal,22.9943,87.8625
+405,70,1973,21807,Bihar & Jharkhand,Bihar / Jharkhand,25.6031,85.1466
+405,750,1980,21820,Jammu & Kashmir,Jammu & Kashmir,34.0837,74.7973
+405,751,1987,21833,Assam,Assam,26.146,91.7377
+405,752,1994,21846,Bihar & Jharkhand,Bihar / Jharkhand,25.5971,85.1406
+405,753,2001,21859,Odisha,Odisha,20.3006,85.829
+405,754,2008,21872,Himachal Pradesh,Himachal Pradesh,31.1108,77.1794
+405,755,2015,21885,North East,India Telecom Circle,28.543,77.3985
+405,756,2022,21898,Madhya Pradesh & Chhattisgarh,Madhya Pradesh,23.2689,77.4216
+405,799,2029,21911,Mumbai,Mumbai,19.076,72.8777
+405,800,2036,21924,Delhi & NCR,Delhi NCR,28.6154,77.2105
+405,801,2043,21937,Andhra Pradesh and Telangana,Andhra Pradesh / Telangana,17.388,78.4897
+405,802,2050,21950,Gujarat,Gujarat,23.027,72.5759
+405,803,2057,21963,Karnataka,Karnataka,12.9776,77.6006
+405,804,2064,21976,Maharashtra & Goa,Maharashtra,19.0835,72.8852
+405,805,2071,21989,Mumbai,Mumbai,19.085,72.8867
+405,806,2078,22002,Rajasthan,Rajasthan,26.9124,75.7873
+405,807,2085,22015,Haryana,Haryana,29.0603,76.0871
+405,808,2092,22028,Madhya Pradesh,Madhya Pradesh,23.2629,77.4156
+405,809,2099,22041,Kerala,Kerala,9.9357,76.2718
+405,810,2106,22054,Uttar Pradesh (East),UP East / West,26.8527,80.9522
+405,811,2113,22067,Uttar Pradesh (West),UP East / West,26.8542,80.9537
+405,812,2120,22080,Punjab,Punjab,30.7423,76.7884
+405,819,2127,22093,Andhra Pradesh and Telangana,Andhra Pradesh / Telangana,17.385,78.4867
+405,818,2134,22106,Uttar Pradesh (West),UP East / West,26.8482,80.9477
+405,820,2141,22119,Karnataka,Karnataka,12.9746,77.5976
+405,821,2148,22132,Kerala,Kerala,9.9357,76.2718
+405,822,2155,22145,Kolkata,Kolkata,22.5786,88.3699
+405,824,2162,22158,Assam,Assam,26.152,91.7437
+405,827,2169,22171,Gujarat,Gujarat,23.0315,72.5804
+405,834,2176,22184,Madhya Pradesh,Madhya Pradesh,23.2599,77.4126
+405,844,2183,22197,Delhi & NCR,Delhi NCR,28.6154,77.2105
+405,840,2190,22210,West Bengal,West Bengal,22.9898,87.858
+405,845,2197,22223,Assam,Assam,26.149,91.7407
+405,846,2204,22236,Jammu & Kashmir,Jammu & Kashmir,34.0897,74.8033
+405,847,2211,22249,Karnataka,Karnataka,12.9791,77.6021
+405,848,2218,22262,Kolkata,Kolkata,22.5816,88.3729
+405,849,2225,22275,North East,India Telecom Circle,28.5355,77.391
+405,850,2232,22288,Odisha,Odisha,20.2976,85.826
+405,851,2239,22301,Punjab,Punjab,30.7363,76.7824
+405,852,2246,22314,Tamil Nadu,Tamil Nadu,13.0872,80.2752
+405,853,2253,22327,West Bengal,West Bengal,22.9928,87.861
+405,854,2260,22340,Andhra Pradesh,Andhra Pradesh / Telangana,17.3925,78.4942
+405,855,2267,22353,Assam,Assam,26.1535,91.7452
+405,856,2274,22366,Bihar,Bihar / Jharkhand,25.5941,85.1376
+405,857,2281,22379,Gujarat,Gujarat,23.024,72.5729
+405,858,2288,22392,Haryana,Haryana,29.0618,76.0886
+405,859,2295,22405,Himachal Pradesh,Himachal Pradesh,31.1093,77.1779
+405,860,2302,22418,Jammu & Kashmir,Jammu & Kashmir,34.0897,74.8033
+405,861,2309,22431,Karnataka,Karnataka,12.9791,77.6021
+405,862,2316,22444,Kerala,Kerala,9.9402,76.2763
+405,863,2323,22457,Madhya Pradesh,Madhya Pradesh,23.2599,77.4126
+405,864,2330,22470,Maharashtra,Maharashtra,19.0775,72.8792
+405,865,2337,22483,North East,India Telecom Circle,28.5385,77.394
+405,866,2344,22496,Odisha,Odisha,20.3006,85.829
+405,867,2351,22509,Punjab,Punjab,30.7393,76.7854
+405,868,2358,22522,Rajasthan,Rajasthan,26.9199,75.7948
+405,869,2365,22535,Tamil Nadu (incl. Chennai),Tamil Nadu,13.0917,80.2797
+405,870,2372,22548,Uttar Pradesh (West),UP East / West,26.8467,80.9462
+405,871,2379,22561,Uttar Pradesh (East),UP East / West,26.8482,80.9477
+405,872,2386,22574,Delhi,Delhi NCR,28.6169,77.212
+405,873,2393,22587,Kolkata,Kolkata,22.5771,88.3684
+405,874,2400,22600,Mumbai,Mumbai,19.082,72.8837
+405,875,2407,22613,Assam,Assam,26.152,91.7437
+405,880,2414,22626,West Bengal,West Bengal,22.9958,87.864
+405,881,2421,22639,Assam,Assam,26.1445,91.7362
+405,908,2428,22652,Andhra Pradesh and Telangana,Andhra Pradesh / Telangana,17.3865,78.4882
+405,909,2435,22665,Delhi,Delhi NCR,28.6169,77.212
+405,910,2442,22678,Haryana,Haryana,29.0633,76.0901
+405,911,2449,22691,Maharashtra,Maharashtra,19.082,72.8837
+405,912,2456,22704,Andhra Pradesh and Telangana,Andhra Pradesh / Telangana,17.3925,78.4942
+405,913,2463,22717,Delhi & NCR,Delhi NCR,28.6229,77.218
+405,914,2470,22730,Gujarat,Gujarat,23.0225,72.5714
+405,917,2477,22743,Kerala,Kerala,9.9327,76.2688
+405,927,2484,22756,Gujarat,Gujarat,23.0255,72.5744
+405,929,2491,22769,Maharashtra,Maharashtra,19.0805,72.8822
+404,10,1042,41201,Bharti Airtel Limited (Delhi/NCR),Delhi NCR / Sector-62 Noida,28.6279,77.3649
+405,854,2081,55312,Reliance Jio Infocomm (UP East),UP East / Lucknow,26.8467,80.9462
+404,11,1180,33219,Vodafone Idea (Delhi/NCR),Delhi NCR / Noida Central,28.5823,77.3178
+404,55,3012,18422,BSNL (UP East),UP East / Gomti Nagar,26.8505,81.0005

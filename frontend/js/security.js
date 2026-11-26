@@ -32,6 +32,29 @@ function escapeHtml(text) {
         .replace(/'/g, "&#039;");
 }
 
+// Role-based sidebar navigation gating
+function applyRoleBasedNav() {
+    try {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        const parts = token.split('.');
+        if (parts.length !== 3) return;
+        const payload = JSON.parse(atob(parts[1]));
+        const role = (payload.role || '').toLowerCase();
+        const allowedAdminNav = ['admin', 'sho', 'sp', 'dgp'];
+        if (!allowedAdminNav.includes(role)) {
+            document.querySelectorAll('a[href="admin.html"]').forEach((el) => {
+                el.classList.add('d-none');
+            });
+        }
+    } catch (_err) {
+        // Ignore malformed token; page auth checks handle redirect
+    }
+}
+
+document.addEventListener('DOMContentLoaded', applyRoleBasedNav);
+
 // Expose globally
 window.safeHTML = safeHTML;
 window.escapeHtml = escapeHtml;
+window.applyRoleBasedNav = applyRoleBasedNav;

@@ -1,18 +1,15 @@
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from jose import JWTError, jwt
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 
 from backend.database import get_db
 from backend import models, schemas
 from backend.utils import security
+from backend.utils.audit import record_audit_log
+from backend.utils.limiter import limiter
 from backend.utils.validation import validate_password_strength
-
-# Rate limiter
-limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(
     prefix="/auth",
@@ -30,8 +27,15 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
     try:
         payload = jwt.decode(token, security.SECRET_KEY, algorithms=[security.ALGORITHM])
         username: str = payload.get("sub")
+        jti: str = payload.get("jti")
         if username is None:
             raise credentials_exception
+        if jti:
+            revoked = db.query(models.TokenBlocklist.id).filter(
+                models.TokenBlocklist.jti == jti
+            ).first()
+            if revoked:
+                raise credentials_exception
         token_data = schemas.TokenData(username=username, role=payload.get("role"))
     except JWTError:
         raise credentials_exception
@@ -56,13 +60,13 @@ async def login_for_access_token(
     if not user or not security.verify_password(form_data.password, user.hashed_password):
         # Log failed attempt
         if user:
-            log = models.AuditLog(
+            record_audit_log(
+                db,
                 user_id=user.id,
                 action="LOGIN_FAILED",
-                details=f"Failed login attempt from IP: {request.state.client_ip}"
+                details=f"Failed login attempt from IP: {request.state.client_ip}",
+                commit=True,
             )
-            db.add(log)
-            db.commit()
         
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -85,13 +89,13 @@ async def login_for_access_token(
     )
     
     # Audit Log
-    log = models.AuditLog(
+    record_audit_log(
+        db,
         user_id=user.id,
         action="LOGIN",
-        details=f"User logged in successfully from IP: {request.state.client_ip}"
+        details=f"User logged in successfully from IP: {request.state.client_ip}",
+        commit=True,
     )
-    db.add(log)
-    db.commit()
     
     return {
         "access_token": access_token, 
@@ -127,7 +131,14 @@ def register_user(
         username=user.username,
         email=user.email,
         hashed_password=hashed_password,
-        role=user.role
+        role=user.role,
+        rank=user.rank,
+        station_name=user.station_name,
+        sub_division=user.sub_division,
+        district_name=user.district_name,
+        range_name=user.range_name,
+        zone_name=user.zone_name,
+        state_name=user.state_name,
     )
     db.add(db_user)
     try:
@@ -161,3 +172,34 @@ async def change_password(
     db.commit()
     
     return {"message": "Password updated successfully"}
+
+
+@router.post("/logout")
+def logout_current_token(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+):
+    """Revoke the active JWT (jti) server-side upon logout."""
+    try:
+        payload = jwt.decode(token, security.SECRET_KEY, algorithms=[security.ALGORITHM])
+    except JWTError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+    jti = payload.get("jti")
+    exp_ts = payload.get("exp")
+    expires_at = datetime.fromtimestamp(exp_ts, tz=timezone.utc) if exp_ts else None
+
+    if jti:
+        exists = db.query(models.TokenBlocklist.id).filter(models.TokenBlocklist.jti == jti).first()
+        if not exists:
+            db.add(models.TokenBlocklist(jti=jti, expires_at=expires_at))
+
+    record_audit_log(
+        db,
+        user_id=current_user.id,
+        action="LOGOUT",
+        details="User logged out and JWT revoked",
+    )
+    db.commit()
+    return {"message": "Logged out successfully"}

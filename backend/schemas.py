@@ -1,16 +1,24 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional, List
 from datetime import datetime
 from backend.models import (
     UserRole, RequestStatus, CaseType, CaseCategory,
     FinancialEntityType, TransactionEventType
 )
+from backend.utils.validation import validate_mobile_number
 
 # User Schemas
 class UserBase(BaseModel):
     username: str
     email: EmailStr
     role: UserRole = UserRole.OFFICER
+    rank: Optional[str] = None
+    station_name: Optional[str] = None
+    sub_division: Optional[str] = None
+    district_name: Optional[str] = None
+    range_name: Optional[str] = None
+    zone_name: Optional[str] = None
+    state_name: Optional[str] = None
 
 class UserCreate(UserBase):
     password: str
@@ -23,16 +31,7 @@ class UserResponse(UserBase):
     id: int
     is_active: bool
     is_first_login: bool
-    is_first_login: bool
     created_at: datetime
-    
-    # Hierarchy Fields
-    rank: Optional[str] = None
-    station_name: Optional[str] = None
-    sub_division: Optional[str] = None
-    district_name: Optional[str] = None
-    range_name: Optional[str] = None
-    zone_name: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -79,12 +78,34 @@ class RequestBase(BaseModel):
     reason: str
 
 class RequestCreate(RequestBase):
-    pass
+    @field_validator("mobile_number")
+    @classmethod
+    def check_mobile_number(cls, v: str) -> str:
+        is_valid, err = validate_mobile_number(v)
+        if not is_valid:
+            raise ValueError(err)
+        return v.strip()
 
 class RequestBatchCreate(BaseModel):
     mobile_numbers: List[str]
     request_type: str
     reason: str
+
+    @field_validator("mobile_numbers")
+    @classmethod
+    def check_mobile_numbers(cls, values: List[str]) -> List[str]:
+        cleaned = []
+        for v in values:
+            item = v.strip()
+            if not item:
+                continue
+            is_valid, err = validate_mobile_number(item)
+            if not is_valid:
+                raise ValueError(f"{item}: {err}")
+            cleaned.append(item)
+        if not cleaned:
+            raise ValueError("At least one valid mobile number is required")
+        return cleaned
 
 class RequestResponse(RequestBase):
     id: int
@@ -92,6 +113,8 @@ class RequestResponse(RequestBase):
     status: RequestStatus
     created_at: datetime
     reviewer_id: Optional[int] = None
+    request_file_path: Optional[str] = None
+    result_file_path: Optional[str] = None
 
     class Config:
         from_attributes = True

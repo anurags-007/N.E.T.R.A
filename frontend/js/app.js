@@ -5,7 +5,8 @@ if (!token) {
 }
 
 // Logout
-document.getElementById('logoutBtn').addEventListener('click', () => {
+document.getElementById('logoutBtn').addEventListener('click', async () => {
+    await API.logout(token);
     localStorage.removeItem('token');
     window.location.href = 'index.html';
 });
@@ -76,14 +77,12 @@ async function init() {
             userDisplay.appendChild(scopeSpan);
         }
 
-        // Hide "New Case" if not SI/Officer (and not SHO/Constable who cannot create)
-        // Allowed creators: SI and Legacy Officer
-        if (!['si', 'officer', 'sub_inspector'].includes(user.role.toLowerCase())) {
-            const btn = document.querySelector('[data-bs-target="#newCaseModal"]');
-            if (btn) {
+        // Align all New Case buttons visibility with backend cases.py RBAC (Constable, HC, SI, Officer)
+        if (!['constable', 'head_constable', 'si', 'officer', 'sub_inspector'].includes(user.role.toLowerCase())) {
+            document.querySelectorAll('[data-bs-target="#newCaseModal"]').forEach(btn => {
                 btn.classList.remove('d-flex');
                 btn.classList.add('d-none');
-            }
+            });
         }
 
         loadCases();
@@ -183,8 +182,16 @@ async function loadCases() {
         const countDisplay = document.getElementById('totalCasesCount');
         if (countDisplay) countDisplay.innerText = cases.length;
 
-        // Render Table
-        renderTable(cases);
+        // Sync with case_filters.js state so Clear/Sort/Count work reliably
+        if (typeof allCases !== 'undefined') {
+            allCases = cases;
+            window.allCases = cases;
+        }
+        if (typeof filterCases === 'function') {
+            filterCases();
+        } else {
+            renderTable(cases);
+        }
 
         // Search Filter
         const searchInput = document.getElementById('searchCaseInput');

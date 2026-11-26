@@ -154,7 +154,8 @@ def seed_data():
         print("Database seeded successfully!")
 
         # 7. Generate Dummy Files for Testing
-        os.makedirs("test_data", exist_ok=True)
+        test_data_dir = os.path.join("data", "test_data")
+        os.makedirs(test_data_dir, exist_ok=True)
         
         # CSV for File Search
         df_csv = pd.DataFrame({
@@ -162,32 +163,33 @@ def seed_data():
             'UPI': ['fraudster@upi', 'test@upi'],
             'Account': ['987654321098', '111222333444']
         })
-        df_csv.to_csv("test_data/suspect_list.csv", index=False)
-        print("Created test_data/suspect_list.csv")
+        df_csv.to_csv(os.path.join(test_data_dir, "suspect_list.csv"), index=False)
+        print("Created data/test_data/suspect_list.csv")
         
         # Excel for File Search
         df_excel = pd.DataFrame({
             'Entity': ['9876543210', 'fraudster@upi'],
             'Type': ['Mobile', 'UPI']
         })
-        df_excel.to_excel("test_data/suspect_details.xlsx", index=False)
-        print("Created test_data/suspect_details.xlsx")
+        df_excel.to_excel(os.path.join(test_data_dir, "suspect_details.xlsx"), index=False)
+        print("Created data/test_data/suspect_details.xlsx")
         
         # PDF (Simple Text file renamed to .pdf for basic extension test or use reportlab)
         # Since I am not sure if reportlab is fully ready, I'll just write a text file with PDF extension
         # and hope the PDF parser handles it or I'll just skip PDF for now if it fails.
         # Actually I saw 'pypdf' so I should create a real PDF if possible.
+        report_pdf_path = os.path.join(test_data_dir, "investigation_report.pdf")
         try:
              from reportlab.pdfgen import canvas
-             c = canvas.Canvas("test_data/investigation_report.pdf")
+             c = canvas.Canvas(report_pdf_path)
              c.drawString(100, 750, "Suspect Mobile: 9876543210")
              c.drawString(100, 730, "Fraud UPI: fraudster@upi")
              c.save()
-             print("Created test_data/investigation_report.pdf")
+             print("Created data/test_data/investigation_report.pdf")
         except ImportError:
-             with open("test_data/investigation_report.pdf", "w") as f:
+             with open(report_pdf_path, "w") as f:
                  f.write("%PDF-1.4\n1 0 obj\n<< /Title (Test) >>\nendobj\ntext: 9876543210")
-             print("Created dummy text-based investigation_report.pdf")
+             print("Created dummy text-based data/test_data/investigation_report.pdf")
 
     except Exception as e:
         db.rollback()

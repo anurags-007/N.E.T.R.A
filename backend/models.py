@@ -140,8 +140,9 @@ class TelecomRequest(Base):
     reviewed_at = Column(DateTime(timezone=True), nullable=True)
     rejection_reason = Column(Text, nullable=True)
 
-    # Generated Request Letter
+    # Generated Request Letter & Uploaded Result
     request_file_path = Column(String, nullable=True) 
+    result_file_path = Column(String, nullable=True)
 
     case = relationship("Case", back_populates="requests")
     reviewer = relationship("User", back_populates="reviews")
@@ -174,6 +175,8 @@ class AuditLog(Base):
     action = Column(String)
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
     details = Column(Text, nullable=True)
+    prev_hash = Column(String, nullable=True)
+    entry_hash = Column(String, nullable=True)
 
     user = relationship("User", back_populates="audit_logs")
 
@@ -297,7 +300,7 @@ class NPCIRequest(Base):
     reviewer = relationship("User")
 
 class FreezeRequest(Base):
-    """Urgent account freeze requests (Section 102 CrPC)"""
+    """Urgent account freeze requests (Section 106 BNSS, 2023)"""
     __tablename__ = "freeze_requests"
     
     id = Column(Integer, primary_key=True, index=True)
@@ -324,3 +327,28 @@ class FreezeRequest(Base):
     # Relationships
     case = relationship("Case", back_populates="freeze_requests")
     financial_entity = relationship("FinancialEntity")
+
+
+class TokenBlocklist(Base):
+    """Revoked JWT IDs (jti) for server-side logout enforcement."""
+    __tablename__ = "token_blocklist"
+
+    id = Column(Integer, primary_key=True, index=True)
+    jti = Column(String, unique=True, index=True, nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    revoked_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class CdrIndexEntry(Base):
+    """Indexed MSISDN / IMEI subscribers extracted from uploaded CDR evidence."""
+    __tablename__ = "cdr_index_entries"
+
+    id = Column(Integer, primary_key=True, index=True)
+    case_id = Column(Integer, ForeignKey("cases.id"), index=True, nullable=False)
+    evidence_id = Column(Integer, ForeignKey("evidence.id"), index=True, nullable=False)
+    msisdn = Column(String, index=True, nullable=True)
+    imei = Column(String, index=True, nullable=True)
+    call_count = Column(Integer, default=1)
+
+    case = relationship("Case")
+    evidence = relationship("Evidence")

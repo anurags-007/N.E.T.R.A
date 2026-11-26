@@ -1,0 +1,42 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: netra_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-netra}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-netra_change_me_in_prod}
+      POSTGRES_DB: ${POSTGRES_DB:-netra_db}
+    volumes:
+      - netra_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-netra} -d ${POSTGRES_DB:-netra_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: netra_portal
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8001:8001"
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-netra}:${POSTGRES_PASSWORD:-netra_change_me_in_prod}@db:5432/${POSTGRES_DB:-netra_db}
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env before starting Docker Compose}
+      ENCRYPTION_KEYS: ${ENCRYPTION_KEYS:?Set ENCRYPTION_KEYS in .env before starting Docker Compose}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8001,http://127.0.0.1:8001}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+    volumes:
+      - ./data/secure_uploads:/app/data/secure_uploads
+      - ./data/generated_requests:/app/data/generated_requests
+      - ./data/geo:/app/data/geo
+
+volumes:
+  netra_pg_data:

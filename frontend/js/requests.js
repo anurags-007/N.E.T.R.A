@@ -8,7 +8,8 @@ if (!token) {
 }
 
 // Logout
-document.getElementById('logoutBtn').addEventListener('click', () => {
+document.getElementById('logoutBtn').addEventListener('click', async () => {
+    await API.logout(token);
     localStorage.removeItem('token');
     window.location.href = 'index.html';
 });
@@ -122,7 +123,7 @@ function renderRequestsTable(requests) {
         } else if (r.status === 'approved') {
             actionButtons = `
                 <button class="btn btn-sm btn-outline-secondary me-1" onclick="uploadSignedCopy(${r.id})">
-                    <i class="bi bi-upload"></i> Upload Signed
+                    <i class="bi bi-upload"></i> Upload Signed / Reply
                 </button>
                 <button class="btn btn-sm btn-outline-dark" onclick="generateEmailDraft(${r.id})">
                     <i class="bi bi-envelope-at"></i> Email Draft
@@ -130,6 +131,9 @@ function renderRequestsTable(requests) {
             `;
         } else if (r.status === 'dispatched') {
             actionButtons = `
+                <button class="btn btn-sm btn-outline-secondary me-1" onclick="uploadSignedCopy(${r.id})">
+                    <i class="bi bi-upload"></i> Upload Reply
+                </button>
                 <button class="btn btn-sm btn-success disabled">
                     <i class="bi bi-check2-all"></i> Sent
                 </button>
@@ -154,12 +158,12 @@ function renderRequestsTable(requests) {
         const caseDisplay = linkedCase ? `${linkedCase.fir_number}` : `Case #${r.case_id}`;
 
         tr.innerHTML = `
-            <td>#${r.id}</td>
-            <td><span class="badge bg-light text-dark border">${caseDisplay}</span></td>
-            <td class="font-monospace">${r.mobile_number}</td>
-            <td>${r.request_type}</td>
+            <td>#${escapeHtml(String(r.id))}</td>
+            <td><span class="badge bg-light text-dark border">${escapeHtml(caseDisplay)}</span></td>
+            <td class="font-monospace">${escapeHtml(r.mobile_number)}</td>
+            <td>${escapeHtml(r.request_type)}</td>
             <td>${statusBadge}</td>
-            <td><small class="text-muted text-truncate d-inline-block" style="max-width: 150px;">${r.rejection_reason || r.reason}</small></td>
+            <td><small class="text-muted text-truncate d-inline-block" style="max-width: 150px;">${escapeHtml(r.rejection_reason || r.reason || '')}</small></td>
             <td>${actionButtons}</td>
         `;
         tbody.appendChild(tr);
@@ -190,9 +194,8 @@ async function loadCasesForSelect() {
 
 // Legal Presets Logic
 const JUSTIFICATION_TEMPLATES = {
-    'BNSS_94': 'In exercise of the powers conferred under Section 94 of the Bharatiya Nagarik Suraksha Sanhita (BNSS), the requested data is required for the purpose of ongoing investigation in the linked case to establish identity and trace suspects.',
-    'CRPC_91': 'Data requisitioned under Section 91 of the Code of Criminal Procedure (CrPC) for the production of documents or other things necessary for the purpose of the investigation in the mentioned FIR.',
-    'CRPC_102': 'Seeking information under Section 102 of CrPC regarding property (telecommunications data) which may be found under circumstances which create suspicion of the commission of any offence.',
+    'BNSS_94': 'In exercise of the powers conferred under Section 94 of the Bharatiya Nagarik Suraksha Sanhita (BNSS), 2023, the requested data is required for the purpose of ongoing investigation in the linked case to establish identity and trace suspects.',
+    'BNSS_106': 'Seeking seizure/freeze action under Section 106 of the Bharatiya Nagarik Suraksha Sanhita (BNSS), 2023 regarding property/digital records suspected to be involved in the commission of the offence.',
     'EMERGENCY': 'URGENT: Request initiated due to a life-threatening emergency situation. Official written requisition will be provided ex-post facto as per department protocol.',
     'OTHER': ''
 };
@@ -256,14 +259,14 @@ function openReview(id) {
     modal.show();
 }
 
-async function submitReview(action) {
+async function submitReview(action, providedReason = null) {
     if (!currentReviewId) return;
 
     try {
         if (action === 'approve') {
             await API.approveRequest(token, currentReviewId);
         } else {
-            const reason = prompt("Enter rejection reason:"); // Simple prompt for now, or use the modal input
+            const reason = providedReason || prompt("Enter rejection reason:");
             if (!reason) return;
             await API.rejectRequest(token, currentReviewId, reason);
         }
@@ -305,16 +308,37 @@ function generateEmailDraft(reqId) {
     document.getElementById('emailTemplate').value = "standard";
     applyTemplate(); // Generates body/subject
 
-    // PDF Preview
+    // PDF Preview via authenticated Blob URL (never expose JWT in URL query)
     document.getElementById('previewFilename').innerText = `REQ_${reqId}.pdf`;
     document.getElementById('pdfLoading').classList.remove('d-none');
 
-    // Use the download endpoint for preview (browser handles PDF)
-    const pdfUrl = `${API_URL}/requests/${reqId}/download?token=${token}`;
-    document.getElementById('pdfPreviewFrame').src = pdfUrl;
-    document.getElementById('pdfPreviewFrame').onload = () => {
+    const previewFrame = document.getElementById('pdfPreviewFrame');
+    let previewBlobUrl = null;
+    fetch(`${API_URL}/requests/${reqId}/download`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+    })
+        .then(resp => {
+            if (!resp.ok) throw new Error('Failed to load requisition PDF');
+            return resp.blob();
+        })
+        .then(blob => {
+            previewBlobUrl = URL.createObjectURL(blob);
+            previewFrame.src = previewBlobUrl;
+        })
+        .catch(() => {
+            document.getElementById('pdfLoading').classList.add('d-none');
+        });
+
+    previewFrame.onload = () => {
         document.getElementById('pdfLoading').classList.add('d-none');
     };
+    document.getElementById('emailDraftModal').addEventListener('hidden.bs.modal', () => {
+        if (previewBlobUrl) {
+            URL.revokeObjectURL(previewBlobUrl);
+            previewBlobUrl = null;
+            previewFrame.src = '';
+        }
+    }, { once: true });
 
     // Download Button
     document.getElementById('downloadReqBtn').onclick = () => API.downloadRequestLetter(token, reqId);
@@ -368,7 +392,7 @@ Respected Sir/Madam,
 
 [${prefix}]
 
-In exercise of the powers conferred under Section 91 of the Code of Criminal Procedure (CrPC), you are hereby requested to provide the ${req.request_type} details for:
+In exercise of the powers conferred under Section 94 of the Bharatiya Nagarik Suraksha Sanhita (BNSS), 2023, you are hereby requested to provide the ${req.request_type} details for:
 
 Mobile Number(s):
 ${req.mobile_number}
@@ -432,11 +456,12 @@ function copyEmailToClipboard() {
 function showAlert(type, msg) {
     const ph = document.getElementById('alertPlaceholder');
     ph.innerHTML = `
-        <div class="alert alert-${type} alert-dismissible fade show" role="alert">
-            ${msg}
+        <div class="alert alert-${escapeHtml(type)} alert-dismissible fade show" role="alert">
+            <span class="alert-msg"></span>
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         </div>
     `;
+    ph.querySelector('.alert-msg').textContent = msg;
     setTimeout(() => {
         ph.innerHTML = '';
     }, 5000);
@@ -447,10 +472,10 @@ let uploadTargetRequestId = null;
 
 function uploadSignedCopy(reqId) {
     uploadTargetRequestId = reqId;
-    document.getElementById('signedUploadInput').click();
+    document.getElementById('signedUploadInput')?.click();
 }
 
-document.getElementById('signedUploadInput').addEventListener('change', async (e) => {
+document.getElementById('signedUploadInput')?.addEventListener('change', async (e) => {
     if (!uploadTargetRequestId || !e.target.files[0]) return;
 
     const file = e.target.files[0];
@@ -468,5 +493,9 @@ document.getElementById('signedUploadInput').addEventListener('change', async (e
         uploadTargetRequestId = null;
     }
 });
+
+// Expose filter helpers globally for inline HTML event handlers
+window.filterRequests = filterRequests;
+window.clearRequestFilters = clearRequestFilters;
 
 init();

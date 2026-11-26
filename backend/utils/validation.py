@@ -1,35 +1,30 @@
 """Validation utilities for input sanitization and security"""
+import io
 import re
 import os
 from pathlib import Path
 from typing import Optional
+import zipfile
 
 
 def validate_password_strength(password: str) -> tuple[bool, Optional[str]]:
     """
-    Simplified password validation
-    Accepts:
-    - Numeric PIN (e.g., 1234, 999999)
-    - Alphabets only (e.g., abcd, Police)
-    - Alphanumeric (e.g., abc123, Officer99)
-    
-    Minimum requirement: 4 characters
-    
-    Returns:
-        (is_valid, error_message)
+    Enforce strong password complexity for law enforcement portal accounts:
+    - Minimum 10 characters, maximum 128 characters
+    - At least one uppercase letter, lowercase letter, digit, and symbol
     """
-    # Minimum length check
-    if len(password) < 4:
-        return False, "Password/PIN must be at least 4 characters long"
-    
-    # Maximum length check (reasonable limit)
-    if len(password) > 20:
-        return False, "Password/PIN must not exceed 20 characters"
-    
-    # Allow only alphanumeric (no special characters required)
-    if not re.match(r'^[A-Za-z0-9]+$', password):
-        return False, "Password/PIN must contain only letters and numbers (no special characters)"
-    
+    if len(password) < 10:
+        return False, "Password must be at least 10 characters long"
+    if len(password) > 128:
+        return False, "Password must not exceed 128 characters"
+    if not re.search(r"[A-Z]", password):
+        return False, "Password must contain at least one uppercase letter"
+    if not re.search(r"[a-z]", password):
+        return False, "Password must contain at least one lowercase letter"
+    if not re.search(r"\d", password):
+        return False, "Password must contain at least one digit"
+    if not re.search(r"[^A-Za-z0-9]", password):
+        return False, "Password must contain at least one special character"
     return True, None
 
 
@@ -143,4 +138,68 @@ def validate_fir_number(fir: str) -> tuple[bool, Optional[str]]:
     if not re.match(r'^[A-Z0-9\-/]+$', fir.upper()):
         return False, "FIR number contains invalid characters"
     
+    return True, None
+
+
+MAX_ZIP_UNCOMPRESSED_BYTES = 50 * 1024 * 1024  # 50 MB
+MAX_ZIP_FILES = 100
+
+
+def validate_file_magic_and_zip(content: bytes, ext: str) -> tuple[bool, Optional[str]]:
+    """
+    Verify file magic bytes match the declared extension and guard ZIPs against decompression bombs.
+    Rejects renamed executables (MZ/ELF/Mach-O/shebang scripts disguised as documents/CSVs).
+    """
+    ext = (ext or "").lower()
+    if not content:
+        return False, "Uploaded file is empty"
+
+    # Block obvious native executable magic bytes regardless of extension
+    if content.startswith((b"MZ", b"\x7fELF", b"\xca\xfe\xba\xbe", b"\xfe\xed\xfa\xce", b"\xfe\xed\xfa\xcf")):
+        return False, "Executable binaries are strictly prohibited"
+
+    if ext == ".pdf":
+        if not content.lstrip().startswith(b"%PDF-"):
+            return False, "Invalid PDF file header (magic bytes mismatch)"
+    elif ext == ".png":
+        if not content.startswith(b"\x89PNG\r\n\x1a\n"):
+            return False, "Invalid PNG file header (magic bytes mismatch)"
+    elif ext in (".jpg", ".jpeg"):
+        if not content.startswith(b"\xff\xd8\xff"):
+            return False, "Invalid JPEG file header (magic bytes mismatch)"
+    elif ext in (".xlsx", ".docx", ".zip"):
+        if not content.startswith((b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08")):
+            return False, f"Invalid {ext} archive signature (magic bytes mismatch)"
+        if ext == ".zip":
+            try:
+                with zipfile.ZipFile(io.BytesIO(content)) as zf:
+                    infos = zf.infolist()
+                    if len(infos) > MAX_ZIP_FILES:
+                        return False, f"ZIP contains too many files ({len(infos)} > {MAX_ZIP_FILES})"
+                    total_uncompressed = sum(max(0, info.file_size) for info in infos)
+                    if total_uncompressed > MAX_ZIP_UNCOMPRESSED_BYTES:
+                        return False, "ZIP uncompressed size exceeds 50 MB limit (potential decompression bomb)"
+            except zipfile.BadZipFile:
+                return False, "Corrupted or invalid ZIP archive"
+    elif ext in (".xls", ".doc"):
+        is_ole2 = content.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1")
+        is_pk = content.startswith(b"PK\x03\x04")
+        if not (is_ole2 or is_pk):
+            return False, f"Invalid legacy Office {ext} header (magic bytes mismatch)"
+    elif ext == ".mp3":
+        if not (content.startswith(b"ID3") or (len(content) >= 2 and content[0] == 0xFF and (content[1] & 0xE0) == 0xE0)):
+            return False, "Invalid MP3 audio header"
+    elif ext == ".mp4":
+        if len(content) < 12 or content[4:8] != b"ftyp":
+            return False, "Invalid MP4 container header"
+    elif ext in (".csv", ".txt"):
+        if b"\x00" in content[:4096]:
+            return False, f"Binary content is not allowed in {ext} files"
+        try:
+            content[:8192].decode("utf-8")
+        except UnicodeDecodeError:
+            try:
+                content[:8192].decode("latin-1")
+            except UnicodeDecodeError:
+                return False, f"File is not valid readable text for {ext}"
     return True, None
