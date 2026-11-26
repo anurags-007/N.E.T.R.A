@@ -61,7 +61,3 @@ pip install -r requirements.txt
 uvicorn backend.main:app --port 8001 --reload
 ```
 
-### 🌍 Access
-*   **Dashboard**: `http://localhost:8001/frontend/index.html`
-*   **Default Mode**: Evaluation / Local Development
-
