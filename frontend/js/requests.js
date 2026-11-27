@@ -1,44 +1,77 @@
-const token = localStorage.getItem('token');
 let currentUser = null;
 let allRequests = []; // Cache for requests
 let allCases = []; // Cache for cases
 
-if (!token) {
-    window.location.href = 'index.html';
-}
-
 // Logout
-document.getElementById('logoutBtn').addEventListener('click', async () => {
-    await API.logout(token);
-    localStorage.removeItem('token');
+document.getElementById('logoutBtn')?.addEventListener('click', async () => {
+    await API.logout();
     window.location.href = 'index.html';
 });
 
+// Service Worker, Sidebar, Theme & Filter bindings (strict CSP - external JS)
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/frontend/sw.js').catch(() => {});
+}
+const sidebarEl = document.querySelector('.sidebar');
+const toggleBtn = document.getElementById('sidebarToggle');
+if (toggleBtn && sidebarEl) {
+    toggleBtn.addEventListener('click', (e) => { e.stopPropagation(); sidebarEl.classList.toggle('active'); });
+    document.addEventListener('click', (e) => {
+        if (window.innerWidth <= 768 && sidebarEl.classList.contains('active') && !sidebarEl.contains(e.target) && e.target !== toggleBtn) {
+            sidebarEl.classList.remove('active');
+        }
+    });
+}
+const darkModeBtn = document.getElementById('darkModeToggle');
+if (localStorage.getItem('theme') === 'dark') {
+    document.body.classList.add('dark-mode');
+    if (darkModeBtn) darkModeBtn.innerHTML = '<i class="bi bi-sun-fill"></i>';
+}
+darkModeBtn?.addEventListener('click', () => {
+    document.body.classList.toggle('dark-mode');
+    const isDark = document.body.classList.contains('dark-mode');
+    localStorage.setItem('theme', isDark ? 'dark' : 'light');
+    darkModeBtn.innerHTML = isDark ? '<i class="bi bi-sun-fill"></i>' : '<i class="bi bi-moon-stars"></i>';
+});
+
+document.getElementById('requestStatusFilter')?.addEventListener('change', () => filterRequests());
+document.getElementById('requestTypeFilter')?.addEventListener('change', () => filterRequests());
+document.getElementById('requestSortBy')?.addEventListener('change', () => filterRequests());
+document.getElementById('clearRequestFiltersBtn')?.addEventListener('click', () => clearRequestFilters());
+document.getElementById('rejectReviewBtn')?.addEventListener('click', () => {
+    const reason = prompt("Enter Rejection Reason:");
+    if (reason) submitReview('reject', reason);
+});
+document.getElementById('approveReviewBtn')?.addEventListener('click', () => submitReview('approve'));
+document.getElementById('emailTemplate')?.addEventListener('change', () => applyTemplate());
+document.getElementById('mailtoLink')?.addEventListener('click', () => setTimeout(() => enableMarkSent(), 2000));
+document.getElementById('copyEmailBtn')?.addEventListener('click', () => copyEmailToClipboard());
+document.getElementById('markSentBtn')?.addEventListener('click', () => markRequestAsSent());
+
 async function init() {
     try {
-        currentUser = await API.getMe(token);
+        currentUser = await API.getMe();
 
         // Fix Profile Display
         document.getElementById('userNameDisplay').textContent = currentUser.username;
         const roleDisplay = document.getElementById('userRoleDisplay');
         if (roleDisplay) {
-            const payload = JSON.parse(atob(token.split('.')[1]));
-            roleDisplay.textContent = (payload.rank || currentUser.role).toUpperCase();
+            roleDisplay.textContent = (currentUser.rank || currentUser.role).toUpperCase();
         }
+        if (typeof setRoleBasedNav === 'function') setRoleBasedNav(currentUser.role);
 
         loadRequests();
         loadCasesForSelect();
 
     } catch (err) {
         console.error(err);
-        localStorage.removeItem('token');
         window.location.href = 'index.html';
     }
 }
 
 async function loadRequests() {
     try {
-        allRequests = await API.getRequests(token); // Store in cache
+        allRequests = await API.getRequests(); // Store in cache
         filterRequests(); // Initial Render
     } catch (err) {
         console.error(err);
@@ -110,69 +143,66 @@ function renderRequestsTable(requests) {
 
     requests.forEach(r => {
         const tr = document.createElement('tr');
-
-        let actionButtons = '';
-        // FIX: role value is 'sho' for Inspector (SHO)
-        // Check permissions
         const isAuthorized = ['sho', 'admin', 'dy_sp', 'sp', 'dig', 'igp', 'dgp'].includes(currentUser.role);
-
-        if (isAuthorized && r.status === 'pending') {
-            actionButtons = `
-                <button class="btn btn-sm btn-success" onclick="openReview(${r.id})">Review</button>
-            `;
-        } else if (r.status === 'approved') {
-            actionButtons = `
-                <button class="btn btn-sm btn-outline-secondary me-1" onclick="uploadSignedCopy(${r.id})">
-                    <i class="bi bi-upload"></i> Upload Signed / Reply
-                </button>
-                <button class="btn btn-sm btn-outline-dark" onclick="generateEmailDraft(${r.id})">
-                    <i class="bi bi-envelope-at"></i> Email Draft
-                </button>
-            `;
-        } else if (r.status === 'dispatched') {
-            actionButtons = `
-                <button class="btn btn-sm btn-outline-secondary me-1" onclick="uploadSignedCopy(${r.id})">
-                    <i class="bi bi-upload"></i> Upload Reply
-                </button>
-                <button class="btn btn-sm btn-success disabled">
-                    <i class="bi bi-check2-all"></i> Sent
-                </button>
-            `;
-        }
 
         // Calculate Pending Days
         const createdDate = new Date(r.created_at);
         const now = new Date();
-        const diffTime = Math.abs(now - createdDate);
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        const diffDays = Math.ceil(Math.abs(now - createdDate) / (1000 * 60 * 60 * 24));
 
-        let statusBadge = `<span class="badge bg-${getStatusColor(r.status)}">${r.status.toUpperCase()}</span>`;
-
-        // Highlight aging requests
+        let statusBadge = `<span class="badge bg-${getStatusColor(r.status)}">${escapeHtml(r.status.toUpperCase())}</span>`;
         if (r.status === 'pending' && diffDays > 7) {
             statusBadge += ` <span class="badge bg-danger ms-1" title="Escalation Required"><i class="bi bi-clock-history"></i> ${diffDays}d</span>`;
         }
 
-        // Lookup Case Info
         const linkedCase = allCases.find(c => c.id === r.case_id);
         const caseDisplay = linkedCase ? `${linkedCase.fir_number}` : `Case #${r.case_id}`;
 
-        tr.innerHTML = `
+        tr.innerHTML = safeHTML(`
             <td>#${escapeHtml(String(r.id))}</td>
             <td><span class="badge bg-light text-dark border">${escapeHtml(caseDisplay)}</span></td>
             <td class="font-monospace">${escapeHtml(r.mobile_number)}</td>
             <td>${escapeHtml(r.request_type)}</td>
             <td>${statusBadge}</td>
             <td><small class="text-muted text-truncate d-inline-block" style="max-width: 150px;">${escapeHtml(r.rejection_reason || r.reason || '')}</small></td>
-            <td>${actionButtons}</td>
-        `;
+            <td class="req-actions-cell"></td>
+        `);
+
+        const actCell = tr.querySelector('.req-actions-cell');
+        if (isAuthorized && r.status === 'pending') {
+            const revBtn = document.createElement('button');
+            revBtn.className = 'btn btn-sm btn-success';
+            revBtn.textContent = 'Review';
+            revBtn.addEventListener('click', () => openReview(r.id));
+            actCell.appendChild(revBtn);
+        } else if (r.status === 'approved') {
+            const upBtn = document.createElement('button');
+            upBtn.className = 'btn btn-sm btn-outline-secondary me-1';
+            upBtn.innerHTML = '<i class="bi bi-upload"></i> Upload Signed / Reply';
+            upBtn.addEventListener('click', () => uploadSignedCopy(r.id));
+            const emBtn = document.createElement('button');
+            emBtn.className = 'btn btn-sm btn-outline-dark';
+            emBtn.innerHTML = '<i class="bi bi-envelope-at"></i> Email Draft';
+            emBtn.addEventListener('click', () => generateEmailDraft(r.id));
+            actCell.append(upBtn, emBtn);
+        } else if (r.status === 'dispatched') {
+            const upBtn = document.createElement('button');
+            upBtn.className = 'btn btn-sm btn-outline-secondary me-1';
+            upBtn.innerHTML = '<i class="bi bi-upload"></i> Upload Reply';
+            upBtn.addEventListener('click', () => uploadSignedCopy(r.id));
+            const sentBtn = document.createElement('button');
+            sentBtn.className = 'btn btn-sm btn-success disabled';
+            sentBtn.innerHTML = '<i class="bi bi-check2-all"></i> Sent';
+            actCell.append(upBtn, sentBtn);
+        }
+
         tbody.appendChild(tr);
     });
 }
 
 async function loadCasesForSelect() {
     try {
-        allCases = await API.getCases(token); // Cache cases
+        allCases = await API.getCases(); // Cache cases
         const select = document.getElementById('caseSelect');
         // Reset and add placeholder
         select.innerHTML = '<option value="" disabled selected>Select Investigation Case</option>';
@@ -231,7 +261,7 @@ document.getElementById('newRequestForm').addEventListener('submit', async (e) =
 
     try {
         // Use Batch Endpoint
-        const response = await API.createBatchRequests(token, caseId, payload);
+        const response = await API.createBatchRequests(null, caseId, payload);
 
         // Close modal
         const modal = bootstrap.Modal.getInstance(document.getElementById('newRequestModal'));
@@ -264,11 +294,11 @@ async function submitReview(action, providedReason = null) {
 
     try {
         if (action === 'approve') {
-            await API.approveRequest(token, currentReviewId);
+            await API.approveRequest(null, currentReviewId);
         } else {
             const reason = providedReason || prompt("Enter rejection reason:");
             if (!reason) return;
-            await API.rejectRequest(token, currentReviewId, reason);
+            await API.rejectRequest(null, currentReviewId, reason);
         }
 
         const modal = bootstrap.Modal.getInstance(document.getElementById('reviewModal'));
@@ -314,9 +344,7 @@ function generateEmailDraft(reqId) {
 
     const previewFrame = document.getElementById('pdfPreviewFrame');
     let previewBlobUrl = null;
-    fetch(`${API_URL}/requests/${reqId}/download`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-    })
+    apiFetch(`/requests/${reqId}/download`)
         .then(resp => {
             if (!resp.ok) throw new Error('Failed to load requisition PDF');
             return resp.blob();
@@ -341,7 +369,7 @@ function generateEmailDraft(reqId) {
     }, { once: true });
 
     // Download Button
-    document.getElementById('downloadReqBtn').onclick = () => API.downloadRequestLetter(token, reqId);
+    document.getElementById('downloadReqBtn').onclick = () => API.downloadRequestLetter(null, reqId);
 
     // Reset "Mark Sent" Button
     const sentBtn = document.getElementById('markSentBtn');
@@ -418,7 +446,7 @@ async function markRequestAsSent() {
     if (!currentEmailReqId) return;
 
     try {
-        await API.dispatchRequest(token, currentEmailReqId);
+        await API.dispatchRequest(null, currentEmailReqId);
 
         const modal = bootstrap.Modal.getInstance(document.getElementById('emailDraftModal'));
         modal.hide();
@@ -483,7 +511,7 @@ document.getElementById('signedUploadInput')?.addEventListener('change', async (
     formData.append('file', file);
 
     try {
-        await API.uploadRequestFile(token, uploadTargetRequestId, formData);
+        await API.uploadRequestFile(null, uploadTargetRequestId, formData);
         showAlert('success', 'Signed Copy Uploaded Successfully');
         loadRequests(); // Refresh to ensure backend path updates
     } catch (err) {

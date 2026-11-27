@@ -234,6 +234,8 @@ class FreezeRequestResponse(FreezeRequestBase):
     freeze_initiated_at: Optional[datetime] = None
     freeze_confirmed_at: Optional[datetime] = None
     bank_reference_number: Optional[str] = None
+    reviewer_id: Optional[int] = None
+    reviewed_at: Optional[datetime] = None
     request_file_path: Optional[str] = None
     
     model_config = ConfigDict(from_attributes=True)

@@ -32,27 +32,36 @@ function escapeHtml(text) {
         .replace(/'/g, "&#039;");
 }
 
-// Role-based sidebar navigation gating
-function applyRoleBasedNav() {
+// Role-based sidebar navigation gating (cookie-authenticated, zero localStorage token)
+function setRoleBasedNav(roleStr) {
+    const role = (roleStr || '').toLowerCase();
+    const allowedAdminNav = ['admin', 'sho', 'sp', 'dgp'];
+    if (role && !allowedAdminNav.includes(role)) {
+        document.querySelectorAll('a[href="admin.html"]').forEach((el) => {
+            el.classList.add('d-none');
+        });
+    }
+}
+
+async function applyRoleBasedNav() {
+    if (window.location.pathname.endsWith('index.html') || window.location.pathname.endsWith('/')) return;
     try {
-        const token = localStorage.getItem('token');
-        if (!token) return;
-        const parts = token.split('.');
-        if (parts.length !== 3) return;
-        const payload = JSON.parse(atob(parts[1]));
-        const role = (payload.role || '').toLowerCase();
-        const allowedAdminNav = ['admin', 'sho', 'sp', 'dgp'];
-        if (!allowedAdminNav.includes(role)) {
-            document.querySelectorAll('a[href="admin.html"]').forEach((el) => {
-                el.classList.add('d-none');
-            });
-        }
+        const base = (typeof API_URL !== 'undefined')
+            ? API_URL
+            : ((window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+                ? `${window.location.protocol}//${window.location.hostname}:8001`
+                : window.location.origin);
+        const resp = await fetch(`${base}/auth/me`, { credentials: 'include' });
+        if (!resp.ok) return;
+        const user = await resp.json();
+        setRoleBasedNav(user.role);
     } catch (_err) {
-        // Ignore malformed token; page auth checks handle redirect
+        // Ignore network errors; page auth checks handle redirect
     }
 }
 
 document.addEventListener('DOMContentLoaded', applyRoleBasedNav);
+window.setRoleBasedNav = setRoleBasedNav;
 
 // Non-blocking Bootstrap toast notification helper (DOM-safe)
 function showToast(msg, type = 'info') {

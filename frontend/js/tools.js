@@ -1,30 +1,25 @@
-document.addEventListener('DOMContentLoaded', () => {
-    // Check Auth
-    const token = localStorage.getItem('token');
-    if (!token) {
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        const user = await API.getMe();
+        document.getElementById('userNameDisplay').textContent = user.username;
+        const roleDisplay = document.getElementById('userRoleDisplay');
+        if (roleDisplay) {
+            roleDisplay.textContent = (user.rank || user.role).toUpperCase();
+        }
+        if (typeof setRoleBasedNav === 'function') setRoleBasedNav(user.role);
+    } catch (_err) {
         window.location.href = 'index.html';
         return;
     }
 
-    // Set Username
-    // Set Username and Role
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    const username = payload.sub;
-    const role = payload.role;
-    const rank = payload.rank || role;
-
-    // Display
-    document.getElementById('userNameDisplay').textContent = username;
-    const roleDisplay = document.getElementById('userRoleDisplay');
-    if (roleDisplay) {
-        roleDisplay.textContent = rank.toUpperCase();
-    }
-
     document.getElementById('logoutBtn')?.addEventListener('click', async (e) => {
         e.preventDefault();
-        await API.logout(token);
-        localStorage.removeItem('token');
+        await API.logout();
         window.location.href = 'index.html';
+    });
+
+    document.getElementById('selectTowerFilesBtn')?.addEventListener('click', () => {
+        document.getElementById('towerFileInput')?.click();
     });
 
     // Setup IP Lookup
@@ -40,11 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('errorContainer').classList.add('d-none');
 
             try {
-                const response = await fetch(`${API_URL}/tools/ip-lookup?query=${encodeURIComponent(input)}`, {
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
-                });
+                const response = await apiFetch(`/tools/ip-lookup?query=${encodeURIComponent(input)}`);
 
                 const data = await response.json();
 
@@ -88,11 +79,95 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Setup Tower Dump Analysis
-    setupTowerDump(token);
+    // Setup Tower Dump Analysis & Co-Location Engine
+    setupTowerDump();
+    setupTowerCoLocation();
 });
 
-function setupTowerDump(token) {
+async function setupTowerCoLocation() {
+    const caseSel = document.getElementById('coLocCaseSelect');
+    const winSel = document.getElementById('coLocWindowSelect');
+    const runBtn = document.getElementById('runCoLocBtn');
+    const statusEl = document.getElementById('coLocStatus');
+    const wrapEl = document.getElementById('coLocTableWrap');
+    const tbody = document.getElementById('coLocTableBody');
+    if (!caseSel || !runBtn) return;
+
+    try {
+        const cases = await API.getCases();
+        caseSel.innerHTML = '';
+        if (cases.length === 0) {
+            const opt = document.createElement('option');
+            opt.value = '';
+            opt.textContent = 'No accessible cases found';
+            caseSel.appendChild(opt);
+            runBtn.disabled = true;
+            return;
+        }
+        cases.forEach(c => {
+            const opt = document.createElement('option');
+            opt.value = c.id;
+            opt.textContent = `${c.fir_number} — ${c.police_station}`;
+            caseSel.appendChild(opt);
+        });
+    } catch (_err) {
+        caseSel.innerHTML = '<option value="">Failed to load cases</option>';
+    }
+
+    runBtn.addEventListener('click', async () => {
+        const cid = caseSel.value;
+        if (!cid) return;
+        const winMin = parseInt(winSel?.value || '15', 10);
+        runBtn.disabled = true;
+        statusEl.textContent = 'Scanning encrypted CDR/tower files...';
+        wrapEl.classList.add('d-none');
+        tbody.innerHTML = '';
+
+        try {
+            const data = await API.analyzeTowerCoLocation(cid, winMin);
+            statusEl.textContent = `Scanned ${data.files_scanned} file(s) | Found ${data.total_pairs} co-located pair(s) within ±${data.window_minutes} min.`;
+            wrapEl.classList.remove('d-none');
+
+            if (!data.pairs || data.pairs.length === 0) {
+                const tr = document.createElement('tr');
+                const td = document.createElement('td');
+                td.colSpan = 5;
+                td.className = 'text-center text-muted py-3';
+                td.textContent = 'No co-located MSISDN pairs found in this time window.';
+                tr.appendChild(td);
+                tbody.appendChild(tr);
+                return;
+            }
+
+            data.pairs.forEach(p => {
+                const tr = document.createElement('tr');
+                const tdA = document.createElement('td');
+                tdA.className = 'font-monospace fw-bold';
+                tdA.textContent = p.msisdn_a;
+                const tdB = document.createElement('td');
+                tdB.className = 'font-monospace fw-bold';
+                tdB.textContent = p.msisdn_b;
+                const tdTower = document.createElement('td');
+                tdTower.textContent = `${p.tower_name} (Cell ${p.cell_id}, LAC ${p.lac})`;
+                const tdHits = document.createElement('td');
+                const badge = document.createElement('span');
+                badge.className = 'badge bg-danger';
+                badge.textContent = `${p.co_location_count} hit(s)`;
+                tdHits.appendChild(badge);
+                const tdDelta = document.createElement('td');
+                tdDelta.textContent = `${p.min_delta_minutes} min`;
+                tr.append(tdA, tdB, tdTower, tdHits, tdDelta);
+                tbody.appendChild(tr);
+            });
+        } catch (err) {
+            statusEl.textContent = `Error: ${err.message}`;
+        } finally {
+            runBtn.disabled = false;
+        }
+    });
+}
+
+function setupTowerDump() {
     const dropZone = document.getElementById('dropZone');
     const fileInput = document.getElementById('towerFileInput');
     const fileList = document.getElementById('fileList');
@@ -155,11 +230,8 @@ function setupTowerDump(token) {
         selectedFiles.forEach(file => formData.append('files', file));
 
         try {
-            const response = await fetch(`${API_URL}/tools/analyze-tower-dump`, {
+            const response = await apiFetch(`/tools/analyze-tower-dump`, {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                },
                 body: formData
             });
 

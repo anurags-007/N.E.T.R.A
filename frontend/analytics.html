@@ -82,10 +82,10 @@
                         <div class="card-header d-flex justify-content-between align-items-center">
                             <span><i class="bi bi-funnel-fill me-2"></i>Advanced Filters & Controls</span>
                             <div class="d-flex gap-2">
-                                <button class="btn btn-sm btn-outline-success" onclick="exportToPDF()">
+                                <button class="btn btn-sm btn-outline-success" id="exportPdfBtn">
                                     <i class="bi bi-file-pdf"></i> Export PDF
                                 </button>
-                                <button class="btn btn-sm btn-outline-primary" onclick="exportToCSV()">
+                                <button class="btn btn-sm btn-outline-primary" id="exportCsvBtn">
                                     <i class="bi bi-file-earmark-spreadsheet"></i> Export CSV
                                 </button>
                                 <div class="form-check form-switch ms-3">
@@ -162,10 +162,10 @@
                             </div>
 
                             <div class="mt-3">
-                                <button class="btn btn-primary btn-sm" onclick="applyFilters()">
+                                <button class="btn btn-primary btn-sm" id="applyFiltersBtn">
                                     <i class="bi bi-check-circle"></i> Apply Filters
                                 </button>
-                                <button class="btn btn-outline-secondary btn-sm ms-2" onclick="resetFilters()">
+                                <button class="btn btn-outline-secondary btn-sm ms-2" id="resetFiltersBtn">
                                     <i class="bi bi-x-circle"></i> Reset
                                 </button>
                             </div>
@@ -180,7 +180,7 @@
                     <div class="card-custom">
                         <div class="card-header d-flex justify-content-between align-items-center">
                             <span><i class="bi bi-bar-chart-fill me-2"></i>Crime Analytics Dashboard</span>
-                            <button class="btn btn-sm btn-outline-primary" onclick="loadFinancialDashboard()">
+                            <button class="btn btn-sm btn-outline-primary" id="refreshFinDashBtn">
                                 <i class="bi bi-arrow-clockwise"></i> Refresh
                             </button>
                         </div>
@@ -316,8 +316,7 @@
                                     <form id="globalSearchForm">
                                         <div class="row g-3">
                                             <div class="col-md-3">
-                                                <select class="form-select form-select-lg" id="searchType"
-                                                    onchange="updateSearchPlaceholder()">
+                                                <select class="form-select form-select-lg" id="searchType">
                                                     <option value="auto">🔍 Auto-Detect</option>
                                                     <option value="mobile">📱 Mobile Number</option>
                                                     <option value="upi">💸 UPI ID</option>
@@ -339,14 +338,12 @@
                                         <!-- One-Click Investigation Report -->
                                         <div class="row g-2 mt-2">
                                             <div class="col-md-6">
-                                                <button type="button" class="btn btn-warning w-100 fw-bold"
-                                                    onclick="getComprehensiveReport(event)">
+                                                <button type="button" class="btn btn-warning w-100 fw-bold" id="comprehensiveReportBtn">
                                                     <i class="bi bi-file-earmark-text-fill"></i> GET COMPLETE REPORT
                                                 </button>
                                             </div>
                                             <div class="col-md-6">
-                                                <button type="button" class="btn btn-info w-100 fw-bold text-white"
-                                                    onclick="visualizeNetwork(event)">
+                                                <button type="button" class="btn btn-info w-100 fw-bold text-white" id="visualizeNetworkBtn">
                                                     <i class="bi bi-diagram-3-fill"></i> VISUALIZE NETWORK
                                                 </button>
                                             </div>
@@ -362,8 +359,7 @@
                                         <div
                                             class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
                                             <span><i class="bi bi-diagram-3 me-2"></i> Intelligence Network Map</span>
-                                            <button class="btn btn-sm btn-outline-light"
-                                                onclick="document.getElementById('networkGraphSection').classList.add('d-none')">
+                                            <button class="btn btn-sm btn-outline-light" id="closeNetworkGraphBtn">
                                                 <i class="bi bi-x-lg"></i>
                                             </button>
                                         </div>
@@ -451,7 +447,7 @@
             <div id="resultsSection" class="d-none">
                 <div class="d-flex justify-content-between align-items-center mb-4">
                     <h4 class="mb-0 fw-bold text-primary">Intelligence Processing Summary</h4>
-                    <button class="btn btn-outline-secondary btn-sm" onclick="window.print()">
+                    <button class="btn btn-outline-secondary btn-sm" id="printSummaryBtn">
                         <i class="bi bi-printer"></i> PRINT OFFICIAL COPY
                     </button>
                 </div>

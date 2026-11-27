@@ -1,9 +1,15 @@
+// Bind external event listeners (strict CSP)
+document.getElementById('exportPdfBtn')?.addEventListener('click', () => exportToPDF());
+document.getElementById('exportCsvBtn')?.addEventListener('click', () => exportToCSV());
+document.getElementById('applyFiltersBtn')?.addEventListener('click', () => applyFilters());
+document.getElementById('resetFiltersBtn')?.addEventListener('click', () => resetFilters());
+
 // PDF Export using jsPDF
 async function exportToPDF() {
     const { jsPDF } = window.jspdf;
 
     // Show loading state
-    const btn = document.querySelector('button[onclick="exportToPDF()"]');
+    const btn = document.getElementById('exportPdfBtn');
     const originalText = btn.innerHTML;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Generating...';
     btn.disabled = true;
@@ -124,11 +130,7 @@ async function exportToPDF() {
 // CSV Export
 function exportToCSV() {
     // Export repeat entities as CSV
-    fetch(`${API_URL}/analytics/repeat-entities`, {
-        headers: {
-            'Authorization': `Bearer ${token}`
-        }
-    })
+    apiFetch(`/analytics/repeat-entities`)
         .then(res => res.json())
         .then(data => {
             if (data.alerts && data.alerts.length > 0) {

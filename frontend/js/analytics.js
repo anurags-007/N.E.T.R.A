@@ -1,21 +1,22 @@
-const token = localStorage.getItem('token');
 let outgoingChart = null;
 let hourlyChart = null;
 
-if (!token) {
-    window.location.href = 'index.html';
-}
-
 document.getElementById('logoutBtn')?.addEventListener('click', async (e) => {
     e.preventDefault();
-    await API.logout(token);
-    localStorage.removeItem('token');
+    await API.logout();
     window.location.href = 'index.html';
 });
 
+document.getElementById('refreshFinDashBtn')?.addEventListener('click', () => loadFinancialDashboard());
+document.getElementById('searchType')?.addEventListener('change', () => updateSearchPlaceholder());
+document.getElementById('comprehensiveReportBtn')?.addEventListener('click', (e) => getComprehensiveReport(e));
+document.getElementById('visualizeNetworkBtn')?.addEventListener('click', (e) => visualizeNetwork(e));
+document.getElementById('closeNetworkGraphBtn')?.addEventListener('click', () => document.getElementById('networkGraphSection')?.classList.add('d-none'));
+document.getElementById('printSummaryBtn')?.addEventListener('click', () => window.print());
+
 async function init() {
     try {
-        const user = await API.getMe(token);
+        const user = await API.getMe();
 
         // Fix Profile Display
         document.getElementById('userNameDisplay').textContent = user.username;
@@ -23,6 +24,7 @@ async function init() {
         if (roleDisplay) {
             roleDisplay.textContent = (user.rank || user.role).toUpperCase();
         }
+        if (typeof setRoleBasedNav === 'function') setRoleBasedNav(user.role);
 
         loadCases();
     } catch (err) {
@@ -33,7 +35,7 @@ async function init() {
 
 async function loadCases() {
     try {
-        const cases = await API.getCases(token);
+        const cases = await API.getCases();
         const select = document.getElementById('caseSelect');
         cases.forEach(c => {
             const opt = document.createElement('option');
@@ -59,7 +61,7 @@ document.getElementById('caseSelect').addEventListener('change', async (e) => {
     }
 
     try {
-        const evidence = await API.getEvidence(token, caseId);
+        const evidence = await API.getEvidence(null, caseId);
         // Filter for potential CDRs (CSV/Excel)
         const cdrs = evidence.filter(ev => ev.file_type === 'CDR_CSV');
 
@@ -90,7 +92,7 @@ document.getElementById('analysisForm').addEventListener('submit', async (e) => 
 
     try {
         // Show Loading?
-        const results = await API.analyzeCDR(token, evidenceId);
+        const results = await API.analyzeCDR(null, evidenceId);
         renderResults(results);
     } catch (err) {
         showAlert('danger', err.message);
@@ -190,11 +192,7 @@ document.getElementById('globalSearchForm').addEventListener('submit', async (e)
     resDiv.innerHTML = '<div class="text-center py-3"><div class="spinner-border text-light" role="status"></div><p class="mt-2">Searching across all databases...</p></div>';
 
     try {
-        const response = await fetch(`${API_URL}/analysis/universal-search?query=${encodeURIComponent(query)}&search_type=${encodeURIComponent(searchType)}`, {
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
-        });
+        const response = await apiFetch(`/analysis/universal-search?query=${encodeURIComponent(query)}&search_type=${encodeURIComponent(searchType)}`);
 
         if (!response.ok) throw new Error('Search failed');
 
@@ -379,11 +377,7 @@ async function getComprehensiveReport(event) {
     resDiv.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-light"></div><p class="mt-3">Generating comprehensive investigation report...</p></div>';
 
     try {
-        const response = await fetch(`${API_URL}/analysis/comprehensive-investigation-data?identifier=${encodeURIComponent(query)}`, {
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
-        });
+        const response = await apiFetch(`/analysis/comprehensive-investigation-data?identifier=${encodeURIComponent(query)}`);
 
         if (!response.ok) throw new Error('Failed to fetch investigation data');
 
@@ -569,7 +563,7 @@ async function getComprehensiveReport(event) {
                     <td><span class="badge bg-success">${escapeHtml(e.verification_status)}</span></td>
                     <td><button type="button" class="btn btn-sm btn-success evidence-dl-btn"><i class="bi bi-download"></i> Download</button></td>
                 `);
-                row.querySelector('.evidence-dl-btn').addEventListener('click', () => API.downloadEvidence(token, e.id));
+                row.querySelector('.evidence-dl-btn').addEventListener('click', () => API.downloadEvidence(null, e.id));
                 tbody.appendChild(row);
             });
         }
@@ -689,11 +683,7 @@ async function visualizeNetwork(event) {
     container.innerHTML = '<div class="h-100 d-flex flex-column align-items-center justify-content-center text-muted"><div class="spinner-border mb-2"></div><div>Building Intelligence Graph...</div></div>';
 
     try {
-        const response = await fetch(`${API_URL}/analysis/network-graph?identifier=${encodeURIComponent(query)}`, {
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
-        });
+        const response = await apiFetch(`/analysis/network-graph?identifier=${encodeURIComponent(query)}`);
 
         if (!response.ok) throw new Error('Failed to fetch graph data');
         const data = await response.json();
@@ -798,11 +788,8 @@ document.getElementById('fileSearchForm').addEventListener('submit', async (e) =
     `);
 
     try {
-        const response = await fetch(`${API_URL}/analysis/file-search`, {
+        const response = await apiFetch(`/analysis/file-search`, {
             method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${token}`
-            },
             body: formData
         });
 
@@ -984,11 +971,7 @@ async function loadFinancialDashboard() {
 
     try {
         // Fetch financial fraud dashboard metrics
-        const response = await fetch(`${API_URL}/analytics/financial-dashboard`, {
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
-        });
+        const response = await apiFetch(`/analytics/financial-dashboard`);
 
         if (!response.ok) throw new Error('Failed to load financial dashboard');
 
@@ -1036,11 +1019,7 @@ async function loadFinancialDashboard() {
 
 async function loadRepeatEntities() {
     try {
-        const response = await fetch(`${API_URL}/analytics/repeat-entities`, {
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
-        });
+        const response = await apiFetch(`/analytics/repeat-entities`);
 
         if (!response.ok) throw new Error('Failed to load repeat entities');
 

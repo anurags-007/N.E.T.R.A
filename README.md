@@ -2,6 +2,8 @@
 
 **N.E.T.R.A.** is a hardened cybercrime investigation, telecom requisitioning, and financial fraud intelligence platform built for Indian law enforcement operations. It combines hierarchical police RBAC, `MultiFernet`-encrypted evidence storage, Indian statutory workflows (**BNSS 2023** & **BSA 2023**), offline IP/cell-tower geolocation, and real-time fraud correlation.
 
+> **Proprietary Software:** Copyright © 2026 Anurag Kumar Singh. All Rights Reserved. See [License & Copyright](#license--copyright) for terms.
+
 ## Live Deployment
 
 - **Live Portal:** [https://netra-cyber-portal.onrender.com/frontend/index.html](https://netra-cyber-portal.onrender.com/frontend/index.html)
@@ -76,4 +78,36 @@ Verified against real public datasets in `scripts/ingest_real_datasets.py` (full
 | **Admin** | `netra_admin` | `NetraAdmin#2026` | User lifecycle & audit chain verification |
 
 ---
+
+## License & Copyright
+
+**Copyright © 2026 Anurag Kumar Singh. All Rights Reserved.**  
+**License Type:** Proprietary License – All Rights Reserved
+
+This project (`N.E.T.R.A.`) and its original source code, documentation, and custom assets are protected by copyright and are the proprietary intellectual property of **Anurag Kumar Singh**.
+
+### Restrictions on Use
+
+Unless expressly authorized in writing by the copyright holder prior to use, no person or entity is permitted to:
+
+1. Copy, reproduce, or republish the source code, in whole or in part.
+2. Modify, adapt, translate, or create derivative works based on the software.
+3. Redistribute, sublicense, sell, rent, lease, or otherwise share the software.
+4. Use the software or any part of its source code for commercial purposes.
+5. Claim ownership, authorship, or origination of the project.
+6. Incorporate substantial portions of the code into other projects or products.
+
+### Permission & Licensing
+
+- **No Implied License:** No license, right, or permission is granted by implication, estoppel, or otherwise, and public visibility of this repository does not grant any right to reuse the code.
+- **Prior Written Consent Mandatory:** Any authorized use, reproduction, modification, or distribution requires prior written consent from **Anurag Kumar Singh**, which may be granted only through a separate written licensing agreement.
+- **Reservation of Rights:** All rights not expressly granted in writing are strictly reserved by the copyright holder.
+
+### Unauthorized Usage & Legal Protection
+
+Unauthorized use, reproduction, modification, or distribution of this software or its original source code may constitute copyright infringement. The copyright holder reserves the right to pursue appropriate legal remedies under applicable copyright laws, which may include injunctive relief, damages, and other legally recognized remedies, subject to applicable law.
+
+### Third-Party Components
+
+This repository may include or reference third-party libraries, frameworks, datasets, and assets. No ownership is claimed over such third-party components, and all third-party dependencies remain subject to their respective open-source or vendor licenses.
 

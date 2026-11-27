@@ -183,8 +183,7 @@
                                     browse</p>
                                 <input type="file" id="towerFileInput" multiple accept=".xlsx, .xls, .csv"
                                     class="d-none">
-                                <button class="btn btn-sm btn-outline-secondary"
-                                    onclick="document.getElementById('towerFileInput').click()">
+                                <button type="button" class="btn btn-sm btn-outline-secondary" id="selectTowerFilesBtn">
                                     Select Files
                                 </button>
                                 <div id="fileList" class="mt-2 text-start small"></div>
@@ -279,6 +278,59 @@
                                 </div>
                             </div>
 
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TOWER CO-LOCATION INTERSECTION ENGINE -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="card-custom border-primary">
+                        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                            <span><i class="bi bi-people-fill me-2"></i>Tower Co-Location &amp; Suspect Intersection Engine</span>
+                            <span class="badge bg-light text-primary">MCC 404 / 405</span>
+                        </div>
+                        <div class="card-body">
+                            <p class="text-muted small mb-3">
+                                Detect distinct suspect MSISDNs hitting the same cell tower within a tight time window across a case's encrypted CDR evidence.
+                            </p>
+                            <div class="row g-2 align-items-end mb-3">
+                                <div class="col-md-6">
+                                    <label for="coLocCaseSelect" class="form-label small fw-bold">Investigation Case</label>
+                                    <select class="form-select form-select-sm" id="coLocCaseSelect">
+                                        <option value="">Loading cases...</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-3">
+                                    <label for="coLocWindowSelect" class="form-label small fw-bold">Time Window</label>
+                                    <select class="form-select form-select-sm" id="coLocWindowSelect">
+                                        <option value="5">±5 Minutes</option>
+                                        <option value="15" selected>±15 Minutes</option>
+                                        <option value="30">±30 Minutes</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-3">
+                                    <button type="button" class="btn btn-primary btn-sm w-100" id="runCoLocBtn">
+                                        <i class="bi bi-intersect me-1"></i> Run Co-Location
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="coLocStatus" class="small text-muted mb-2"></div>
+                            <div class="table-responsive d-none" id="coLocTableWrap" style="max-height: 260px; overflow-y: auto;">
+                                <table class="table table-sm table-striped align-middle mb-0 small">
+                                    <thead class="table-light sticky-top">
+                                        <tr>
+                                            <th>MSISDN A</th>
+                                            <th>MSISDN B</th>
+                                            <th>Tower / Cell-ID (LAC)</th>
+                                            <th>Co-Location Hits</th>
+                                            <th>Min Time Delta</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="coLocTableBody"></tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
                 </div>

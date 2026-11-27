@@ -1,9 +1,9 @@
+from datetime import datetime, timezone
 from typing import List, Literal
 import os
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
-from sqlalchemy.sql import func
 
 from backend.database import get_db
 from backend import models, schemas
@@ -51,7 +51,12 @@ def create_freeze_request(
             detail="Not authorized to create freeze requests. Contact your SHO."
         )
     
-    # Create freeze request
+    # Maker-Checker: SI / Officer initiates in 'pending' state awaiting SHO/DySP+ approval
+    initial_status = (
+        models.RequestStatus.PENDING.value
+        if current_user.role in [models.UserRole.SUB_INSPECTOR, models.UserRole.OFFICER]
+        else "generated"
+    )
     new_freeze = models.FreezeRequest(
         case_id=case_id,
         financial_entity_id=request.financial_entity_id,
@@ -59,7 +64,7 @@ def create_freeze_request(
         account_number=request.account_number,
         urgency_level=request.urgency_level,
         justification=request.justification,
-        status="generated"
+        status=initial_status,
     )
     
     db.add(new_freeze)
@@ -156,13 +161,13 @@ def download_freeze_order_pdf(
 @router.patch("/requests/{request_id}/status")
 def update_freeze_status(
     request_id: int,
-    status: Literal["sent", "confirmed", "expired"],  # sent, confirmed, expired
+    status: Literal["approved", "sent", "confirmed", "expired", "rejected"],
     bank_reference: str = None,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user)
 ):
     """
-    Update freeze request status when bank responds (SHO and above only)
+    Maker-Checker approval/status update for Section 106 BNSS freeze requests (SHO/DySP+ only)
     """
     if current_user.role in [
         models.UserRole.CONSTABLE,
@@ -170,32 +175,35 @@ def update_freeze_status(
         models.UserRole.SUB_INSPECTOR,
         models.UserRole.OFFICER,
     ]:
-        raise HTTPException(status_code=403, detail="Only SHO and above can update freeze request status.")
+        raise HTTPException(status_code=403, detail="Only SHO and above can approve or update freeze request status.")
 
     request = db.query(models.FreezeRequest).filter(models.FreezeRequest.id == request_id).first()
     if not request:
         raise HTTPException(status_code=404, detail="Freeze request not found")
-    authorize_case_access(request.case_id, current_user, db)
-    
+    case = authorize_case_access(request.case_id, current_user, db)
+
+    now_utc = datetime.now(timezone.utc)
     request.status = status
-    
-    if status == "sent":
-        request.freeze_initiated_at = func.now()
+    request.reviewer_id = current_user.id
+    request.reviewed_at = now_utc
+
+    if status in ("approved", "sent"):
+        request.freeze_initiated_at = request.freeze_initiated_at or now_utc
     elif status == "confirmed":
-        request.freeze_confirmed_at = func.now()
+        request.freeze_confirmed_at = now_utc
         if bank_reference:
             request.bank_reference_number = bank_reference
-    
+
     db.commit()
     db.refresh(request)
-    
-    # Log action
+
+    # Log action with both initiator (case.owner_id) and reviewer (current_user.id)
     record_audit_log(
         db,
         user_id=current_user.id,
         action=f"Updated freeze request #{request_id} status to: {status}",
-        details=f"Bank Ref: {bank_reference}" if bank_reference else "No bank reference",
+        details=f"Initiator User #{case.owner_id} | Reviewer User #{current_user.id} | Bank Ref: {bank_reference or 'N/A'}",
         commit=True,
     )
-    
+
     return {"status": "updated", "freeze_request": request}

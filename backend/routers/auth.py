@@ -1,11 +1,13 @@
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+import secrets
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from jose import JWTError, jwt
 
 from backend.database import get_db
-from backend import models, schemas
+from backend import config, models, schemas
 from backend.utils import security
 from backend.utils.audit import record_audit_log
 from backend.utils.limiter import limiter
@@ -16,7 +18,41 @@ router = APIRouter(
     tags=["authentication"]
 )
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token", auto_error=False)
+
+
+def _set_auth_cookies(response: Response, access_token: str) -> None:
+    """Set HttpOnly SameSite=Strict session cookie and readable CSRF cookie."""
+    is_prod = config.ENVIRONMENT == "production"
+    max_age = security.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+    csrf_val = secrets.token_urlsafe(32)
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        httponly=True,
+        secure=is_prod,
+        samesite="strict",
+        max_age=max_age,
+        path="/",
+    )
+    response.set_cookie(
+        key="csrf_token",
+        value=csrf_val,
+        httponly=False,
+        secure=is_prod,
+        samesite="strict",
+        max_age=max_age,
+        path="/",
+    )
+
+
+def _extract_token(request: Request, bearer_token: Optional[str]) -> tuple[Optional[str], bool]:
+    """Return (jwt_token, used_cookie). Prefers HttpOnly cookie when present."""
+    cookie_token = request.cookies.get("access_token")
+    if cookie_token and not bearer_token:
+        return cookie_token, True
+    return bearer_token or cookie_token, False
+
 
 def _prune_expired_blocklist(db: Session) -> None:
     """Remove expired JWT jti entries so TokenBlocklist stays bounded."""
@@ -27,12 +63,26 @@ def _prune_expired_blocklist(db: Session) -> None:
     ).delete(synchronize_session=False)
 
 
-async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+async def get_current_user(
+    request: Request,
+    bearer_token: Optional[str] = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    token, used_cookie = _extract_token(request, bearer_token)
+    if not token:
+        raise credentials_exception
+
+    if used_cookie and request.method in ("POST", "PUT", "PATCH", "DELETE") and request.url.path != "/auth/token":
+        csrf_cookie = request.cookies.get("csrf_token") or ""
+        csrf_header = request.headers.get("X-CSRF-Token") or ""
+        if not csrf_cookie or not csrf_header or not secrets.compare_digest(csrf_cookie, csrf_header):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="CSRF token missing or invalid")
+
     try:
         payload = jwt.decode(token, security.JWT_VERIFYING_KEY, algorithms=[security.ALGORITHM])
         username: str = payload.get("sub")
@@ -62,6 +112,7 @@ async def get_current_active_user(current_user: models.User = Depends(get_curren
 @limiter.limit("5/minute")  # Rate limit: 5 login attempts per minute
 async def login_for_access_token(
     request: Request,
+    response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(), 
     db: Session = Depends(get_db)
 ):
@@ -105,7 +156,9 @@ async def login_for_access_token(
         details=f"User logged in successfully from IP: {request.state.client_ip}",
         commit=True,
     )
-    
+
+    _set_auth_cookies(response, access_token)
+
     return {
         "access_token": access_token, 
         "token_type": "bearer",
@@ -185,11 +238,16 @@ async def change_password(
 
 @router.post("/refresh", response_model=schemas.Token)
 def refresh_access_token(
-    token: str = Depends(oauth2_scheme),
+    request: Request,
+    response: Response,
+    bearer_token: Optional[str] = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ):
     """Rotate the active JWT: revoke the current jti and issue a fresh token."""
+    token, _ = _extract_token(request, bearer_token)
+    if not token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
     try:
         payload = jwt.decode(token, security.JWT_VERIFYING_KEY, algorithms=[security.ALGORITHM])
     except JWTError:
@@ -216,6 +274,7 @@ def refresh_access_token(
     }
     new_token = security.create_access_token(data=token_data, expires_delta=access_token_expires)
     db.commit()
+    _set_auth_cookies(response, new_token)
     return {
         "access_token": new_token,
         "token_type": "bearer",
@@ -225,11 +284,16 @@ def refresh_access_token(
 
 @router.post("/logout")
 def logout_current_token(
-    token: str = Depends(oauth2_scheme),
+    request: Request,
+    response: Response,
+    bearer_token: Optional[str] = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ):
-    """Revoke the active JWT (jti) server-side upon logout."""
+    """Revoke the active JWT (jti) server-side upon logout and clear auth cookies."""
+    token, _ = _extract_token(request, bearer_token)
+    if not token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
     try:
         payload = jwt.decode(token, security.JWT_VERIFYING_KEY, algorithms=[security.ALGORITHM])
     except JWTError:
@@ -252,4 +316,6 @@ def logout_current_token(
         details="User logged out and JWT revoked",
     )
     db.commit()
+    response.delete_cookie("access_token", path="/")
+    response.delete_cookie("csrf_token", path="/")
     return {"message": "Logged out successfully"}

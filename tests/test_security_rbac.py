@@ -525,3 +525,118 @@ def test_network_graph_max_nodes_and_truncated(client_and_db):
     graph = resp.json()
     assert len(graph["nodes"]) <= 3
     assert graph["truncated"] is True
+
+
+def test_httponly_cookie_csrf_and_logout(client_and_db):
+    client, SessionLocal = client_and_db
+    _seed_two_stations(SessionLocal)
+
+    login = client.post("/auth/token", data={"username": "si_alpha", "password": "StrongPass123"})
+    assert login.status_code == 200
+    assert "access_token" in login.cookies
+    assert "csrf_token" in login.cookies
+    csrf = login.cookies["csrf_token"]
+
+    # GET works via HttpOnly cookie without Authorization header
+    me = client.get("/auth/me")
+    assert me.status_code == 200
+    assert me.json()["username"] == "si_alpha"
+
+    # State-changing POST via cookie without X-CSRF-Token is blocked (403)
+    no_csrf = client.post(
+        "/cases/",
+        json={"fir_number": "FIR/A/2026/901", "police_station": "Kotwali", "case_type": "upi_fraud"},
+    )
+    assert no_csrf.status_code == 403
+
+    # With matching X-CSRF-Token it succeeds
+    with_csrf = client.post(
+        "/cases/",
+        headers={"X-CSRF-Token": csrf},
+        json={"fir_number": "FIR/A/2026/901", "police_station": "Kotwali", "case_type": "upi_fraud"},
+    )
+    assert with_csrf.status_code == 200
+
+    # Logout with CSRF revokes jti and clears cookies
+    out = client.post("/auth/logout", headers={"X-CSRF-Token": csrf})
+    assert out.status_code == 200
+    assert client.get("/auth/me").status_code == 401
+
+
+def test_maker_checker_freeze_workflow(client_and_db):
+    client, SessionLocal = client_and_db
+    data = _seed_two_stations(SessionLocal)
+    db = SessionLocal()
+    try:
+        fe = models.FinancialEntity(
+            case_id=data["case_a"].id,
+            entity_type=models.FinancialEntityType.BANK_ACCOUNT,
+            bank_name="State Bank of India",
+            account_number="123456789012",
+            transaction_amount="50000",
+            added_by_id=data["si_a"].id,
+        )
+        db.add(fe)
+        db.commit()
+        db.refresh(fe)
+    finally:
+        db.close()
+
+    h_si = _auth_headers(data["si_a"])
+    h_sho = _auth_headers(data["sho_a"])
+
+    created = client.post(
+        f"/freeze/request/{data['case_a'].id}",
+        headers=h_si,
+        json={
+            "financial_entity_id": fe.id,
+            "bank_name": "State Bank of India",
+            "account_number": "123456789012",
+            "urgency_level": "critical",
+            "justification": "Maker-checker test",
+        },
+    )
+    assert created.status_code == 200
+    frz = created.json()
+    assert frz["status"] == "pending"
+
+    # SI cannot self-approve -> 403
+    assert client.patch(f"/freeze/requests/{frz['id']}/status?status=approved", headers=h_si).status_code == 403
+
+    # SHO approves -> 200 & reviewer_id set
+    approved = client.patch(f"/freeze/requests/{frz['id']}/status?status=approved", headers=h_sho)
+    assert approved.status_code == 200
+    assert approved.json()["freeze_request"]["status"] == "approved"
+    assert approved.json()["freeze_request"]["reviewer_id"] == data["sho_a"].id
+
+
+def test_tower_co_location_intersection(client_and_db):
+    client, SessionLocal = client_and_db
+    data = _seed_two_stations(SessionLocal)
+    h_si = _auth_headers(data["si_a"])
+
+    cdr_csv = (
+        b"A_PARTY,B_PARTY,IMEI,DATE,TIME,DURATION,CALL_TYPE,FIRST_CGI\n"
+        b"9876543210,9811122233,358240051111110,2026-01-01,10:00:00,42,OUT,404-10-1042-41201\n"
+        b"9910099100,9811122233,359999002222221,2026-01-01,10:08:00,30,OUT,404-10-1042-41201\n"
+        b"9123456789,9811122233,359999002222229,2026-01-01,13:00:00,15,OUT,404-10-1042-41201\n"
+    )
+    up = client.post(
+        f"/files/upload/{data['case_a'].id}",
+        headers=h_si,
+        files={"file": ("coloc.csv", cdr_csv, "text/csv")},
+        data={"file_type": "CDR_CSV"},
+    )
+    assert up.status_code == 200
+
+    coloc = client.post(
+        f"/analysis/tower-co-location?case_id={data['case_a'].id}&window_minutes=15",
+        headers=h_si,
+    )
+    assert coloc.status_code == 200
+    body = coloc.json()
+    assert body["total_pairs"] == 1
+    pair = body["pairs"][0]
+    assert {pair["msisdn_a"], pair["msisdn_b"]} == {"9876543210", "9910099100"}
+    assert pair["cell_id"] == "41201"
+    assert pair["min_delta_minutes"] == 8.0

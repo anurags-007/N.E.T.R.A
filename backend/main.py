@@ -22,6 +22,18 @@ for _runtime_dir in ("data/secure_uploads", "data/generated_requests", "data/geo
 # Create database tables
 Base.metadata.create_all(bind=engine)
 
+# Idempotent Maker-Checker migration for freeze_requests (PostgreSQL & SQLite safe)
+with engine.begin() as _conn:
+    if engine.dialect.name == "postgresql":
+        _conn.exec_driver_sql("ALTER TABLE freeze_requests ADD COLUMN IF NOT EXISTS reviewer_id INTEGER REFERENCES users(id);")
+        _conn.exec_driver_sql("ALTER TABLE freeze_requests ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;")
+    elif engine.dialect.name == "sqlite":
+        _cols = {row[1] for row in _conn.exec_driver_sql("PRAGMA table_info(freeze_requests);").fetchall()}
+        if "reviewer_id" not in _cols:
+            _conn.exec_driver_sql("ALTER TABLE freeze_requests ADD COLUMN reviewer_id INTEGER;")
+        if "reviewed_at" not in _cols:
+            _conn.exec_driver_sql("ALTER TABLE freeze_requests ADD COLUMN reviewed_at TIMESTAMP;")
+
 _is_prod = config.ENVIRONMENT == "production"
 app = FastAPI(
     title="Police Case Management System",

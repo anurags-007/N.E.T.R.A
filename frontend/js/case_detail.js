@@ -1,8 +1,7 @@
-const token = localStorage.getItem('token');
 const urlParams = new URLSearchParams(window.location.search);
 const caseId = urlParams.get('id');
 
-if (!token || !caseId) {
+if (!caseId) {
     window.location.href = 'dashboard.html';
 }
 
@@ -15,14 +14,15 @@ let cachedFreezeRequests = [];
 let cachedTimeline = { timeline: [] };
 
 document.getElementById('logoutBtn')?.addEventListener('click', async () => {
-    await API.logout(token);
-    localStorage.removeItem('token');
+    await API.logout();
     window.location.href = 'index.html';
 });
 
+document.getElementById('closeCaseBtn')?.addEventListener('click', () => closeCase());
+
 document.getElementById('exportBsa63Btn')?.addEventListener('click', async () => {
     try {
-        const manifest = await API.getBsa63Manifest(token, caseId);
+        const manifest = await API.getBsa63Manifest(null, caseId);
         const blob = new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' });
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -40,11 +40,10 @@ document.getElementById('exportBsa63Btn')?.addEventListener('click', async () =>
 
 async function init() {
     try {
-        const payload = JSON.parse(atob(token.split('.')[1]));
-        userRole = payload.role;
-        const rank = payload.rank || userRole;
-
-        const currentUser = await API.getMe(token);
+        const currentUser = await API.getMe();
+        userRole = currentUser.role;
+        const rank = currentUser.rank || userRole;
+        if (typeof setRoleBasedNav === 'function') setRoleBasedNav(userRole);
 
         // Display Profile
         document.getElementById('userNameDisplay').textContent = currentUser.username;
@@ -54,7 +53,7 @@ async function init() {
         }
 
         // Load Case Info
-        const caseInfo = await API.getCase(token, caseId);
+        const caseInfo = await API.getCase(null, caseId);
         cachedCaseInfo = caseInfo;
         renderCaseInfo(caseInfo);
 
@@ -70,9 +69,7 @@ async function init() {
 
     } catch (err) {
         console.error(err);
-        if (typeof showToast === 'function') {
-            showToast("Failed to load case data", "danger");
-        }
+        window.location.href = 'index.html';
     }
 }
 
@@ -82,7 +79,7 @@ async function closeCase() {
     }
 
     try {
-        await API.updateCaseStatus(token, caseId, "closed");
+        await API.updateCaseStatus(null, caseId, "closed");
         showAlert('success', "Case marked as Closed successfully.");
         // Small delay to let toast show
         setTimeout(() => window.location.reload(), 1500);
@@ -105,7 +102,7 @@ function renderCaseInfo(c) {
 
 async function loadEvidence() {
     try {
-        const evidenceList = await API.getEvidence(token, caseId);
+        const evidenceList = await API.getEvidence(null, caseId);
         cachedEvidenceList = evidenceList;
         const tbody = document.getElementById('evidenceTableBody');
         tbody.innerHTML = '';
@@ -182,9 +179,7 @@ async function viewEvidence(id, filename, integrityHash) {
     let activeBlobUrl = null;
 
     async function fetchAuthenticatedResponse(url) {
-        const resp = await fetch(url, {
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
+        const resp = await apiFetch(url);
         if (!resp.ok) {
             throw new Error(`Failed to fetch evidence (${resp.status})`);
         }
@@ -401,7 +396,7 @@ document.getElementById('uploadForm').addEventListener('submit', async (e) => {
     const formData = new FormData(e.target);
 
     try {
-        await API.uploadEvidence(token, caseId, formData);
+        await API.uploadEvidence(null, caseId, formData);
         const modal = bootstrap.Modal.getInstance(document.getElementById('uploadModal'));
         modal.hide();
         e.target.reset();
@@ -414,7 +409,7 @@ document.getElementById('uploadForm').addEventListener('submit', async (e) => {
 
 async function downloadFile(id) {
     try {
-        await API.downloadEvidence(token, id);
+        await API.downloadEvidence(null, id);
     } catch (err) {
         showAlert('danger', "Download failed");
     }
@@ -450,8 +445,8 @@ let financialEntitiesMap = {}; // Id -> Entity Object
 async function loadFinancialData() {
     try {
         const [entities, timelineData] = await Promise.all([
-            API.getFinancialEntities(token, caseId),
-            API.getCaseTimeline(token, caseId).catch(() => ({ timeline: [] })),
+            API.getFinancialEntities(null, caseId),
+            API.getCaseTimeline(null, caseId).catch(() => ({ timeline: [] })),
         ]);
         cachedFinancialEntities = entities;
         cachedTimeline = timelineData;
@@ -531,7 +526,7 @@ async function loadFreezeRequests() {
     const listDiv = document.getElementById('freezeRequestsList');
     if (!listDiv) return;
     try {
-        const allReqs = await API.getFreezeRequests(token);
+        const allReqs = await API.getFreezeRequests();
         const caseReqs = allReqs.filter(r => String(r.case_id) === String(caseId));
         cachedFreezeRequests = caseReqs;
         listDiv.innerHTML = '';
@@ -539,12 +534,14 @@ async function loadFreezeRequests() {
 
         const heading = document.createElement('h6');
         heading.className = 'text-muted small fw-bold mt-2 mb-2';
-        heading.textContent = `ACTIVE FREEZE ORDERS (${caseReqs.length})`;
+        heading.textContent = `SEC 106 BNSS FREEZE ORDERS (${caseReqs.length})`;
         listDiv.appendChild(heading);
+
+        const canApproveFreeze = ['sho', 'dy_sp', 'sp', 'dig', 'igp', 'dgp', 'admin'].includes((userRole || '').toLowerCase());
 
         caseReqs.forEach(req => {
             const row = document.createElement('div');
-            row.className = 'd-flex justify-content-between align-items-center p-2 mb-1 bg-light rounded border small';
+            row.className = 'd-flex justify-content-between align-items-center flex-wrap gap-2 p-2 mb-1 bg-light rounded border small';
 
             const left = document.createElement('div');
             const bankStrong = document.createElement('strong');
@@ -554,11 +551,42 @@ async function loadFreezeRequests() {
             accSpan.textContent = req.account_number;
             left.append(bankStrong, accSpan);
 
+            const right = document.createElement('div');
+            right.className = 'd-flex align-items-center gap-2';
+            const stLower = String(req.status || '').toLowerCase();
             const badge = document.createElement('span');
-            badge.className = `badge ${req.status === 'confirmed' ? 'bg-success' : 'bg-danger'}`;
-            badge.textContent = `${String(req.urgency_level || '').toUpperCase()} · ${String(req.status || '').toUpperCase()}`;
+            if (stLower === 'pending') {
+                badge.className = 'badge bg-warning text-dark';
+                badge.textContent = 'Pending SHO / DySP Approval';
+            } else if (stLower === 'confirmed' || stLower === 'approved' || stLower === 'sent') {
+                badge.className = 'badge bg-success';
+                badge.textContent = `${String(req.urgency_level || '').toUpperCase()} · ${stLower.toUpperCase()}`;
+            } else {
+                badge.className = 'badge bg-danger';
+                badge.textContent = `${String(req.urgency_level || '').toUpperCase()} · ${stLower.toUpperCase()}`;
+            }
+            right.appendChild(badge);
 
-            row.append(left, badge);
+            if (stLower === 'pending' && canApproveFreeze) {
+                const appBtn = document.createElement('button');
+                appBtn.type = 'button';
+                appBtn.className = 'btn btn-xs btn-success py-0 px-2';
+                appBtn.style.fontSize = '0.72rem';
+                appBtn.textContent = 'Approve & Dispatch Sec 106 Order';
+                appBtn.addEventListener('click', async () => {
+                    try {
+                        await API.updateFreezeStatus(req.id, 'approved');
+                        showAlert('success', `Freeze Order #${req.id} approved & dispatched.`);
+                        await loadFreezeRequests();
+                        renderGoldenHourSummary(cachedCaseInfo, cachedFinancialEntities, cachedFreezeRequests, cachedTimeline);
+                    } catch (err) {
+                        showAlert('danger', err.message || 'Approval failed');
+                    }
+                });
+                right.appendChild(appBtn);
+            }
+
+            row.append(left, right);
             listDiv.appendChild(row);
         });
     } catch (_err) {
@@ -573,16 +601,17 @@ document.getElementById('freezeForm')?.addEventListener('submit', async (e) => {
     const entityId = parseInt(data.financial_entity_id, 10);
 
     try {
-        await API.createFreezeRequest(token, caseId, {
+        await API.createFreezeRequest(null, caseId, {
             financial_entity_id: entityId,
             bank_name: data.bank_name.trim(),
             account_number: data.account_number.trim(),
             urgency_level: data.urgency_level,
             justification: data.justification.trim()
         });
-        showAlert('success', 'Section 106 BNSS Freeze Order issued successfully.');
+        showAlert('success', 'Section 106 BNSS Freeze Order submitted (Maker-Checker workflow).');
         bootstrap.Modal.getInstance(document.getElementById('freezeModal'))?.hide();
         await loadFreezeRequests();
+        renderGoldenHourSummary(cachedCaseInfo, cachedFinancialEntities, cachedFreezeRequests, cachedTimeline);
     } catch (err) {
         showAlert('danger', err.message || 'Failed to issue freeze order');
     }
@@ -607,7 +636,7 @@ if (npciForm) {
         const identifier = entity.upi_id || entity.account_number || "N/A";
 
         try {
-            await API.createNPCIRequest(token, caseId, {
+            await API.createNPCIRequest(null, caseId, {
                 financial_entity_id: entityId,
                 request_type: data.request_type,
                 reason: data.reason,
@@ -654,7 +683,7 @@ function renderGoldenHourSummary(caseInfo, entities, freezeReqs, timelineData) {
 
     const frozenEntityIds = new Set(
         freezeReqs
-            .filter(r => ['generated', 'sent', 'confirmed'].includes(String(r.status || '').toLowerCase()))
+            .filter(r => ['generated', 'approved', 'sent', 'confirmed'].includes(String(r.status || '').toLowerCase()))
             .map(r => r.financial_entity_id)
     );
     const frozen = entities
@@ -710,8 +739,8 @@ document.getElementById('exportCaseBriefBtn')?.addEventListener('click', async (
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF();
         const c = cachedCaseInfo || {};
-        const reqs = await API.getCaseRequests(token, caseId).catch(() => []);
-        const manifest = await API.getBsa63Manifest(token, caseId).catch(() => ({ evidence_items: [] }));
+        const reqs = await API.getCaseRequests(null, caseId).catch(() => []);
+        const manifest = await API.getBsa63Manifest(null, caseId).catch(() => ({ evidence_items: [] }));
 
         doc.setFillColor(13, 110, 253);
         doc.rect(0, 0, 210, 20, 'F');

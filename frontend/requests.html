@@ -119,7 +119,7 @@
                             </div>
                         </div>
                         <div class="col-md-2">
-                            <select class="form-select" id="requestStatusFilter" onchange="filterRequests()">
+                            <select class="form-select" id="requestStatusFilter">
                                 <option value="">All Status</option>
                                 <option value="pending">Pending</option>
                                 <option value="approved">Approved</option>
@@ -127,7 +127,7 @@
                             </select>
                         </div>
                         <div class="col-md-2">
-                            <select class="form-select" id="requestTypeFilter" onchange="filterRequests()">
+                            <select class="form-select" id="requestTypeFilter">
                                 <option value="">All Types</option>
                                 <option value="CDR">CDR</option>
                                 <option value="CAF">CAF</option>
@@ -135,7 +135,7 @@
                             </select>
                         </div>
                         <div class="col-md-2">
-                            <select class="form-select" id="requestSortBy" onchange="filterRequests()">
+                            <select class="form-select" id="requestSortBy">
                                 <option value="date_desc">Latest First</option>
                                 <option value="date_asc">Oldest First</option>
                                 <option value="id_asc">ID (Low-High)</option>
@@ -143,7 +143,7 @@
                             </select>
                         </div>
                         <div class="col-md-2">
-                            <button class="btn btn-outline-secondary w-100" onclick="clearRequestFilters()">
+                            <button class="btn btn-outline-secondary w-100" id="clearRequestFiltersBtn">
                                 <i class="bi bi-x-circle"></i> Clear
                             </button>
                         </div>
@@ -254,8 +254,8 @@
                         under official police capacity.</p>
 
                     <div class="d-flex justify-content-between mt-4">
-                        <button class="btn btn-outline-danger px-4" onclick="promptReject()">REJECT</button>
-                        <button class="btn btn-success px-4" onclick="submitReview('approve')">APPROVE ONLY</button>
+                        <button class="btn btn-outline-danger px-4" id="rejectReviewBtn">REJECT</button>
+                        <button class="btn btn-success px-4" id="approveReviewBtn">APPROVE ONLY</button>
                     </div>
                 </div>
             </div>
@@ -290,8 +290,7 @@
                             <div class="mb-4">
                                 <div class="d-flex justify-content-between align-items-center mb-2">
                                     <label class="form-label fw-bold small text-muted m-0">2. EMAIL CONTENT</label>
-                                    <select class="form-select form-select-sm w-auto" id="emailTemplate"
-                                        onchange="applyTemplate()">
+                                    <select class="form-select form-select-sm w-auto" id="emailTemplate">
                                         <option value="standard">Standard Request (Section 94 BNSS)</option>
                                         <option value="urgent">Urgent / Life Threatening</option>
                                         <option value="reminder">Follow-up Reminder</option>
@@ -306,12 +305,10 @@
                             <div class="mt-auto">
                                 <div class="d-grid gap-2">
                                     <a href="#" id="mailtoLink"
-                                        class="btn btn-primary btn-lg d-flex align-items-center justify-content-center gap-2"
-                                        onclick="setTimeout(() => enableMarkSent(), 2000)">
+                                        class="btn btn-primary btn-lg d-flex align-items-center justify-content-center gap-2">
                                         <i class="bi bi-envelope-forward-fill"></i> OPEN IN MAIL APP
                                     </a>
-                                    <button class="btn btn-dark d-flex align-items-center justify-content-center gap-2"
-                                        onclick="copyEmailToClipboard()">
+                                    <button type="button" id="copyEmailBtn" class="btn btn-dark d-flex align-items-center justify-content-center gap-2">
                                         <i class="bi bi-clipboard"></i> COPY TO CLIPBOARD
                                     </button>
                                 </div>
@@ -347,8 +344,7 @@
                                         Action required: Open Mail App > Attach PDF > Send.<br>
                                         Then confirm dispatch here.
                                     </div>
-                                    <button id="markSentBtn" class="btn btn-success disabled"
-                                        onclick="markRequestAsSent()">
+                                    <button type="button" id="markSentBtn" class="btn btn-success disabled">
                                         <i class="bi bi-check-circle-fill"></i> MARK AS SENT
                                     </button>
                                 </div>
@@ -364,60 +360,6 @@
 
     <script src="js/api.js"></script>
     <script src="js/requests.js"></script>
-    <script>
-        // Service Worker Registration
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('/frontend/sw.js');
-        }
-
-        // Mobile Sidebar Toggle
-        const sidebar = document.querySelector('.sidebar');
-        const toggleBtn = document.getElementById('sidebarToggle');
-
-        if (toggleBtn) {
-            toggleBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                sidebar.classList.toggle('active');
-            });
-
-            document.addEventListener('click', (e) => {
-                if (window.innerWidth <= 768 &&
-                    sidebar.classList.contains('active') &&
-                    !sidebar.contains(e.target) &&
-                    e.target !== toggleBtn) {
-                    sidebar.classList.remove('active');
-                }
-            });
-        }
-
-        // Dark Mode Toggle
-        const darkModeBtn = document.getElementById('darkModeToggle');
-        const body = document.body;
-
-        if (localStorage.getItem('theme') === 'dark') {
-            body.classList.add('dark-mode');
-            if (darkModeBtn) darkModeBtn.innerHTML = '<i class="bi bi-sun-fill"></i>';
-        }
-
-        if (darkModeBtn) {
-            darkModeBtn.addEventListener('click', () => {
-                body.classList.toggle('dark-mode');
-                const isDark = body.classList.contains('dark-mode');
-                localStorage.setItem('theme', isDark ? 'dark' : 'light');
-                darkModeBtn.innerHTML = isDark ? '<i class="bi bi-sun-fill"></i>' : '<i class="bi bi-moon-stars"></i>';
-            });
-        }
-    </script>
-    <!-- Add promptReject function directly or update requests.js -->
-    <script>
-        function promptReject() {
-            // Simple overlay for rejection logic, creates better UX than browser prompt
-            const reason = prompt("Enter Rejection Reason:");
-            if (reason) {
-                submitReview('reject', reason);
-            }
-        }
-    </script>
     <script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
 </body>
 

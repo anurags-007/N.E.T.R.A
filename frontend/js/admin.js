@@ -1,14 +1,9 @@
-const token = localStorage.getItem('token');
-
-if (!token) {
-    window.location.href = 'index.html';
-}
-
-document.getElementById('logoutBtn').addEventListener('click', async () => {
-    await API.logout(token);
-    localStorage.removeItem('token');
+document.getElementById('logoutBtn')?.addEventListener('click', async () => {
+    await API.logout();
     window.location.href = 'index.html';
 });
+
+document.getElementById('refreshLogsBtn')?.addEventListener('click', () => loadLogs());
 
 document.getElementById('verifyChainBtn')?.addEventListener('click', async () => {
     const banner = document.getElementById('chainVerifyAlert');
@@ -17,7 +12,7 @@ document.getElementById('verifyChainBtn')?.addEventListener('click', async () =>
     banner.innerHTML = '';
 
     try {
-        const res = await API.verifyAuditChain(token);
+        const res = await API.verifyAuditChain();
         const alertDiv = document.createElement('div');
         if (res.valid) {
             alertDiv.className = 'alert alert-success d-flex align-items-center mb-0 shadow-sm';
@@ -47,17 +42,17 @@ document.getElementById('verifyChainBtn')?.addEventListener('click', async () =>
 
 async function init() {
     try {
-        const user = await API.getMe(token);
+        const user = await API.getMe();
         document.getElementById('userNameDisplay').textContent = user.username;
         const roleDisplay = document.getElementById('userRoleDisplay');
         if (roleDisplay) {
             roleDisplay.textContent = (user.rank || user.role).toUpperCase();
         }
+        if (typeof setRoleBasedNav === 'function') setRoleBasedNav(user.role);
 
         loadLogs();
     } catch (err) {
         console.error(err);
-        localStorage.removeItem('token');
         window.location.href = 'index.html';
     }
 }

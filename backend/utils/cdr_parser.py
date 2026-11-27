@@ -337,3 +337,131 @@ def parse_cdr(file_content: bytes, file_ext: str):
 
     except Exception as e:
         return {"error": f"Failed to parse file: {str(e)}"}
+
+
+def _parse_dt(raw: str) -> Optional[datetime]:
+    """Parse common CDR timestamp formats into datetime."""
+    val = (raw or "").strip()
+    if not val:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%d-%m-%Y %H:%M:%S", "%d/%m/%Y %H:%M:%S", "%Y-%m-%d %H:%M"):
+        try:
+            return datetime.strptime(val[:19], fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def extract_tower_co_locations(
+    evidence_items: List[Tuple[bytes, str]],
+    window_minutes: int = 15,
+) -> dict:
+    """
+    Group case CDR/tower events by (lac, cell_id) / CGI and identify distinct MSISDN pairs
+    active on the same cell tower within ±window_minutes.
+    """
+    exact_idx, cell_idx = _load_india_towers()
+    tower_events: Dict[Tuple[str, str], List[Tuple[datetime, str, str, str]]] = defaultdict(list)
+    files_scanned = 0
+
+    for content, filename in evidence_items:
+        lower = (filename or "").lower()
+        if not lower.endswith((".csv", ".xlsx", ".xls")):
+            continue
+        try:
+            headers, rows = _read_tabular_rows(content, lower)
+        except Exception:
+            continue
+        if not headers or not rows:
+            continue
+        files_scanned += 1
+        norm_to_orig = {h.lower().strip(): h for h in headers}
+
+        src_col = next((norm_to_orig[k] for k in ("a_party", "calling_no", "calling_party", "source", "caller", "msisdn", "phone number") if k in norm_to_orig), None)
+        cgi_col = next((norm_to_orig[k] for k in ("first_cgi", "cgi", "cell_id", "tower_id", "last_cgi") if k in norm_to_orig), None)
+        lac_col = next((norm_to_orig[k] for k in ("lac", "lac_id") if k in norm_to_orig), None)
+        cell_col = next((norm_to_orig[k] for k in ("cell_id", "cell") if k in norm_to_orig), None)
+        bts_col = next((norm_to_orig[k] for k in ("first_bts_location", "bts_location", "tower_location", "location") if k in norm_to_orig), None)
+        dt_col = next((norm_to_orig[k] for k in ("call_datetime", "datetime", "timestamp") if k in norm_to_orig), None)
+        date_col = next((norm_to_orig[k] for k in ("date", "call_date") if k in norm_to_orig), None)
+        time_col = next((norm_to_orig[k] for k in ("time", "call_time") if k in norm_to_orig), None)
+
+        if not src_col or (not cgi_col and not cell_col):
+            continue
+
+        for row in rows:
+            msisdn = (row.get(src_col) or "").strip()
+            if not msisdn:
+                continue
+            cgi = (row.get(cgi_col) or "").strip() if cgi_col else ""
+            lac = (row.get(lac_col) or "").strip() if lac_col else ""
+            cell_id = (row.get(cell_col) or "").strip() if cell_col else ""
+
+            if cgi and (not lac or not cell_id):
+                parts = [p for p in re.split(r"[-:/\s]+", cgi) if p]
+                if len(parts) >= 4:
+                    lac = lac or parts[2]
+                    cell_id = cell_id or parts[3]
+                elif not cell_id:
+                    cell_id = cgi
+
+            if not cell_id and not cgi:
+                continue
+
+            dt_raw = (row.get(dt_col) or "").strip() if dt_col else ""
+            if not dt_raw and date_col and time_col:
+                dt_raw = f"{row.get(date_col, '')} {row.get(time_col, '')}".strip()
+            ts = _parse_dt(dt_raw)
+            if not ts:
+                continue
+
+            bts_loc = (row.get(bts_col) or "").strip() if bts_col else ""
+            tower_events[(lac, cell_id)].append((ts, msisdn, cgi or f"{lac}-{cell_id}", bts_loc))
+
+    window_sec = window_minutes * 60
+    pair_stats: Dict[Tuple[str, str, str, str], dict] = {}
+
+    for (lac, cell_id), evs in tower_events.items():
+        evs.sort(key=lambda x: x[0])
+        for i in range(len(evs)):
+            ts_a, m_a, cgi_a, bts_a = evs[i]
+            for j in range(i + 1, len(evs)):
+                ts_b, m_b, _cgi_b, bts_b = evs[j]
+                delta_sec = (ts_b - ts_a).total_seconds()
+                if delta_sec > window_sec:
+                    break
+                if m_a == m_b:
+                    continue
+                pair_a, pair_b = sorted((m_a, m_b))
+                key = (pair_a, pair_b, lac, cell_id)
+                delta_min = round(delta_sec / 60.0, 2)
+                if key not in pair_stats:
+                    resolved = _resolve_cgi(cgi_a, exact_idx, cell_idx) or _resolve_cgi(cell_id, exact_idx, cell_idx)
+                    pair_stats[key] = {
+                        "msisdn_a": pair_a,
+                        "msisdn_b": pair_b,
+                        "lac": lac or (resolved["lac"] if resolved else "-"),
+                        "cell_id": cell_id,
+                        "cgi": cgi_a,
+                        "tower_name": bts_a or bts_b or (resolved["circle"] if resolved else "Unknown Tower"),
+                        "operator": resolved["operator"] if resolved else "Unknown",
+                        "lat": resolved["lat"] if resolved else None,
+                        "lon": resolved["lon"] if resolved else None,
+                        "co_location_count": 0,
+                        "min_delta_minutes": delta_min,
+                    }
+                pair_stats[key]["co_location_count"] += 1
+                if delta_min < pair_stats[key]["min_delta_minutes"]:
+                    pair_stats[key]["min_delta_minutes"] = delta_min
+
+    ranked = sorted(
+        pair_stats.values(),
+        key=lambda p: (-p["co_location_count"], p["min_delta_minutes"]),
+    )[:100]
+
+    return {
+        "files_scanned": files_scanned,
+        "window_minutes": window_minutes,
+        "total_pairs": len(ranked),
+        "pairs": ranked,
+    }

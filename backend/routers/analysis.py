@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from starlette.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session, joinedload
 from collections import defaultdict
@@ -756,4 +756,32 @@ async def file_based_search(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"File processing error: {str(e)}")
+
+
+@router.post("/tower-co-location")
+def analyze_tower_co_location(
+    case_id: int,
+    window_minutes: int = Query(15, ge=1, le=120),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+):
+    """Find distinct MSISDN pairs co-located on the same cell tower within ±window_minutes."""
+    from backend.utils.cdr_parser import extract_tower_co_locations
+
+    authorize_case_access(case_id, current_user, db)
+    evidence_rows = db.query(models.Evidence).filter(models.Evidence.case_id == case_id).all()
+    items = []
+    for ev in evidence_rows:
+        if not ev.file_path or not os.path.exists(ev.file_path):
+            continue
+        try:
+            with open(ev.file_path, "rb") as f:
+                raw = cipher_suite.decrypt(f.read())
+            items.append((raw, ev.original_filename or ""))
+        except Exception:
+            continue
+
+    result = extract_tower_co_locations(items, window_minutes=window_minutes)
+    result["case_id"] = case_id
+    return result
 

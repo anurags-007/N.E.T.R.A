@@ -1,13 +1,34 @@
 // Dynamic API URL based on environment
 const API_URL = (() => {
-    // If running on localhost, use port 8001
     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
         return `${window.location.protocol}//${window.location.hostname}:8001`;
     }
-    // In production, assume API is on same domain
     return window.location.origin;
 })();
 
+function getCookie(name) {
+    const match = document.cookie.match(new RegExp('(?:^|; )' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '=([^;]*)'));
+    return match ? decodeURIComponent(match[1]) : '';
+}
+
+async function apiFetch(pathOrUrl, options = {}) {
+    const url = pathOrUrl.startsWith('http') ? pathOrUrl : `${API_URL}${pathOrUrl}`;
+    const method = (options.method || 'GET').toUpperCase();
+    const headers = new Headers(options.headers || {});
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+        const csrf = getCookie('csrf_token');
+        if (csrf) headers.set('X-CSRF-Token', csrf);
+    }
+    return fetch(url, {
+        ...options,
+        method,
+        headers,
+        credentials: 'include',
+    });
+}
+
+window.API_URL = API_URL;
+window.apiFetch = apiFetch;
 
 class API {
     static async login(username, password) {
@@ -15,7 +36,7 @@ class API {
         formData.append("username", username);
         formData.append("password", password);
 
-        const response = await fetch(`${API_URL}/auth/token`, {
+        const response = await apiFetch(`/auth/token`, {
             method: "POST",
             body: formData,
         });
@@ -23,7 +44,7 @@ class API {
         return response.json();
     }
 
-    static async register(username, email, password, role = "officer", token, jurisdiction = {}) {
+    static async register(username, email, password, role = "officer", _token = null, jurisdiction = {}) {
         const payload = { username, email, password, role };
         if (jurisdiction.station_name) payload.station_name = jurisdiction.station_name;
         if (jurisdiction.sub_division) payload.sub_division = jurisdiction.sub_division;
@@ -31,12 +52,9 @@ class API {
         if (jurisdiction.range_name) payload.range_name = jurisdiction.range_name;
         if (jurisdiction.zone_name) payload.zone_name = jurisdiction.zone_name;
 
-        const response = await fetch(`${API_URL}/auth/register`, {
+        const response = await apiFetch(`/auth/register`, {
             method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${token}`
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload),
         });
         if (!response.ok) {
@@ -46,30 +64,24 @@ class API {
         return response.json();
     }
 
-    static async getMe(token) {
-        const response = await fetch(`${API_URL}/auth/me`, {
-            headers: { "Authorization": `Bearer ${token}` },
-        });
+    static async getMe() {
+        const response = await apiFetch(`/auth/me`);
         if (!response.ok) throw new Error("Failed to fetch user");
         return response.json();
     }
 
-    static async getCases(token) {
-        const response = await fetch(`${API_URL}/cases/`, {
-            headers: { "Authorization": `Bearer ${token}` },
-        });
+    static async getCases() {
+        const response = await apiFetch(`/cases/`);
         if (!response.ok) throw new Error("Failed to fetch cases");
         return response.json();
     }
 
-    static async createCase(token, caseData) {
-        const response = await fetch(`${API_URL}/cases/`, {
+    static async createCase(_token, caseData) {
+        const payload = caseData || _token;
+        const response = await apiFetch(`/cases/`, {
             method: "POST",
-            headers: {
-                "Authorization": `Bearer ${token}`,
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify(caseData),
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
         });
         if (!response.ok) {
             const err = await response.json();
@@ -78,21 +90,16 @@ class API {
         return response.json();
     }
 
-    static async getRequests(token) {
-        const response = await fetch(`${API_URL}/requests/`, {
-            headers: { "Authorization": `Bearer ${token}` },
-        });
+    static async getRequests() {
+        const response = await apiFetch(`/requests/`);
         if (!response.ok) throw new Error("Failed to fetch requests");
         return response.json();
     }
 
-    static async createRequest(token, caseId, requestData) {
-        const response = await fetch(`${API_URL}/requests/?case_id=${caseId}`, {
+    static async createRequest(_token, caseId, requestData) {
+        const response = await apiFetch(`/requests/?case_id=${caseId}`, {
             method: "POST",
-            headers: {
-                "Authorization": `Bearer ${token}`,
-                "Content-Type": "application/json",
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify(requestData),
         });
         if (!response.ok) {
@@ -102,13 +109,10 @@ class API {
         return response.json();
     }
 
-    static async createBatchRequests(token, caseId, batchData) {
-        const response = await fetch(`${API_URL}/requests/batch?case_id=${caseId}`, {
+    static async createBatchRequests(_token, caseId, batchData) {
+        const response = await apiFetch(`/requests/batch?case_id=${caseId}`, {
             method: "POST",
-            headers: {
-                "Authorization": `Bearer ${token}`,
-                "Content-Type": "application/json",
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify(batchData),
         });
         if (!response.ok) {
@@ -118,66 +122,51 @@ class API {
         return response.json();
     }
 
-    static async approveRequest(token, requestId) {
-        const response = await fetch(`${API_URL}/requests/${requestId}/approve`, {
-            method: "POST",
-            headers: { "Authorization": `Bearer ${token}` },
-        });
+    static async approveRequest(_token, requestId) {
+        const response = await apiFetch(`/requests/${requestId}/approve`, { method: "POST" });
         if (!response.ok) throw new Error("Failed to approve request");
         return response.json();
     }
 
-    static async rejectRequest(token, requestId, reason) {
-        const response = await fetch(`${API_URL}/requests/${requestId}/reject?reason=${encodeURIComponent(reason)}`, {
-            method: "POST",
-            headers: { "Authorization": `Bearer ${token}` },
-        });
+    static async rejectRequest(_token, requestId, reason) {
+        const response = await apiFetch(`/requests/${requestId}/reject?reason=${encodeURIComponent(reason)}`, { method: "POST" });
         if (!response.ok) throw new Error("Failed to reject request");
         return response.json();
     }
 
-    static async dispatchRequest(token, requestId) {
-        const response = await fetch(`${API_URL}/requests/${requestId}/dispatch`, {
-            method: "POST",
-            headers: { "Authorization": `Bearer ${token}` },
-        });
+    static async dispatchRequest(_token, requestId) {
+        const response = await apiFetch(`/requests/${requestId}/dispatch`, { method: "POST" });
         if (!response.ok) throw new Error("Failed to dispatch request");
         return response.json();
     }
 
-    static async getCase(token, id) {
-        const response = await fetch(`${API_URL}/cases/${id}`, {
-            headers: { "Authorization": `Bearer ${token}` },
-        });
+    static async getCase(_token, id) {
+        const caseId = id !== undefined ? id : _token;
+        const response = await apiFetch(`/cases/${caseId}`);
         if (!response.ok) throw new Error("Failed to fetch case");
         return response.json();
     }
 
-    static async updateCaseStatus(token, id, status) {
-        const response = await fetch(`${API_URL}/cases/${id}/status`, {
+    static async updateCaseStatus(_token, id, status) {
+        const response = await apiFetch(`/cases/${id}/status`, {
             method: "PATCH",
-            headers: {
-                "Authorization": `Bearer ${token}`,
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ status })
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status }),
         });
         if (!response.ok) throw new Error("Failed to update status");
         return response.json();
     }
 
-    static async getEvidence(token, caseId) {
-        const response = await fetch(`${API_URL}/files/case/${caseId}`, {
-            headers: { "Authorization": `Bearer ${token}` },
-        });
+    static async getEvidence(_token, caseId) {
+        const cid = caseId !== undefined ? caseId : _token;
+        const response = await apiFetch(`/files/case/${cid}`);
         if (!response.ok) throw new Error("Failed to fetch evidence");
         return response.json();
     }
 
-    static async uploadEvidence(token, caseId, formData) {
-        const response = await fetch(`${API_URL}/files/upload/${caseId}`, {
+    static async uploadEvidence(_token, caseId, formData) {
+        const response = await apiFetch(`/files/upload/${caseId}`, {
             method: "POST",
-            headers: { "Authorization": `Bearer ${token}` }, // No Content-Type for FormData
             body: formData,
         });
         if (!response.ok) {
@@ -187,26 +176,18 @@ class API {
         return response.json();
     }
 
-    static async downloadEvidence(token, id) {
-        // FIX: Use POST request to avoid exposing token in URL
-        const response = await fetch(`${API_URL}/files/download/${id}`, {
-            method: "GET",
-            headers: { "Authorization": `Bearer ${token}` },
-        });
-
+    static async downloadEvidence(_token, id) {
+        const evId = id !== undefined ? id : _token;
+        const response = await apiFetch(`/files/download/${evId}`);
         if (!response.ok) throw new Error("Download failed");
 
-        // Get filename from Content-Disposition header
         const contentDisposition = response.headers.get('Content-Disposition');
         let filename = 'evidence_file';
         if (contentDisposition) {
             const matches = /filename="?([^"]+)"?/.exec(contentDisposition);
-            if (matches && matches[1]) {
-                filename = matches[1];
-            }
+            if (matches && matches[1]) filename = matches[1];
         }
 
-        // Download file
         const blob = await response.blob();
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -218,20 +199,16 @@ class API {
         document.body.removeChild(a);
     }
 
-    static async downloadRequestLetter(token, requestId) {
-        const response = await fetch(`${API_URL}/requests/${requestId}/download`, {
-            method: "GET",
-            headers: { "Authorization": `Bearer ${token}` },
-        });
+    static async downloadRequestLetter(_token, requestId) {
+        const rid = requestId !== undefined ? requestId : _token;
+        const response = await apiFetch(`/requests/${rid}/download`);
         if (!response.ok) throw new Error("Failed to download requisition letter");
 
         const contentDisposition = response.headers.get('Content-Disposition');
-        let filename = `REQ_${requestId}.pdf`;
+        let filename = `REQ_${rid}.pdf`;
         if (contentDisposition) {
             const matches = /filename="?([^"]+)"?/.exec(contentDisposition);
-            if (matches && matches[1]) {
-                filename = matches[1];
-            }
+            if (matches && matches[1]) filename = matches[1];
         }
 
         const blob = await response.blob();
@@ -245,10 +222,9 @@ class API {
         document.body.removeChild(a);
     }
 
-    static async uploadRequestFile(token, requestId, formData) {
-        const response = await fetch(`${API_URL}/requests/${requestId}/upload`, {
+    static async uploadRequestFile(_token, requestId, formData) {
+        const response = await apiFetch(`/requests/${requestId}/upload`, {
             method: "POST",
-            headers: { "Authorization": `Bearer ${token}` },
             body: formData,
         });
         if (!response.ok) {
@@ -258,10 +234,9 @@ class API {
         return response.json();
     }
 
-    static async analyzeCDR(token, evidenceId) {
-        const response = await fetch(`${API_URL}/analysis/cdr/${evidenceId}`, {
-            headers: { "Authorization": `Bearer ${token}` },
-        });
+    static async analyzeCDR(_token, evidenceId) {
+        const eid = evidenceId !== undefined ? evidenceId : _token;
+        const response = await apiFetch(`/analysis/cdr/${eid}`);
         if (!response.ok) {
             const err = await response.json();
             throw new Error(err.detail || "Analysis failed");
@@ -269,33 +244,27 @@ class API {
         return response.json();
     }
 
-    static async getAuditLogs(token) {
-        const response = await fetch(`${API_URL}/admin/logs`, {
-            headers: { "Authorization": `Bearer ${token}` },
-        });
+    static async getAuditLogs() {
+        const response = await apiFetch(`/admin/logs`);
         if (!response.ok) throw new Error("Failed to fetch logs");
         return response.json();
     }
 
-    static async searchCrossCase(token, mobileNumber) {
-        const response = await fetch(`${API_URL}/analysis/correlate/${mobileNumber}`, {
-            headers: { "Authorization": `Bearer ${token}` },
-        });
+    static async searchCrossCase(_token, mobileNumber) {
+        const mob = mobileNumber !== undefined ? mobileNumber : _token;
+        const response = await apiFetch(`/analysis/correlate/${mob}`);
         if (!response.ok) throw new Error("Search failed");
         return response.json();
     }
 
-    static async changePassword(token, oldPassword, newPassword) {
-        const response = await fetch(`${API_URL}/auth/change-password`, {
+    static async changePassword(_token, oldPassword, newPassword) {
+        const response = await apiFetch(`/auth/change-password`, {
             method: "POST",
-            headers: {
-                "Authorization": `Bearer ${token}`,
-                "Content-Type": "application/json"
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 old_password: oldPassword,
-                new_password: newPassword
-            })
+                new_password: newPassword,
+            }),
         });
         if (!response.ok) {
             const err = await response.json();
@@ -304,16 +273,11 @@ class API {
         return response.json();
     }
 
-    // ========== FINANCIAL MODULE API ==========
-
-    static async createFinancialEntity(token, caseId, entityData) {
-        const response = await fetch(`${API_URL}/financial-entities/${caseId}`, {
+    static async createFinancialEntity(_token, caseId, entityData) {
+        const response = await apiFetch(`/financial-entities/${caseId}`, {
             method: "POST",
-            headers: {
-                "Authorization": `Bearer ${token}`,
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify(entityData)
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(entityData),
         });
         if (!response.ok) {
             const err = await response.json();
@@ -322,22 +286,18 @@ class API {
         return response.json();
     }
 
-    static async getFinancialEntities(token, caseId) {
-        const response = await fetch(`${API_URL}/financial-entities/${caseId}`, {
-            headers: { "Authorization": `Bearer ${token}` }
-        });
+    static async getFinancialEntities(_token, caseId) {
+        const cid = caseId !== undefined ? caseId : _token;
+        const response = await apiFetch(`/financial-entities/${cid}`);
         if (!response.ok) throw new Error("Failed to fetch financial entities");
         return response.json();
     }
 
-    static async createNPCIRequest(token, caseId, requestData) {
-        const response = await fetch(`${API_URL}/npci/requests/${caseId}`, {
+    static async createNPCIRequest(_token, caseId, requestData) {
+        const response = await apiFetch(`/npci/requests/${caseId}`, {
             method: "POST",
-            headers: {
-                "Authorization": `Bearer ${token}`,
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify(requestData)
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(requestData),
         });
         if (!response.ok) {
             const err = await response.json();
@@ -346,22 +306,17 @@ class API {
         return response.json();
     }
 
-    static async logout(token) {
-        if (!token) return;
+    static async logout() {
         try {
-            await fetch(`${API_URL}/auth/logout`, {
-                method: "POST",
-                headers: { "Authorization": `Bearer ${token}` }
-            });
+            await apiFetch(`/auth/logout`, { method: "POST" });
         } catch (_err) {
-            // Proceed with local token clear even if offline
+            // Proceed even if offline
         }
     }
 
-    static async getBsa63Manifest(token, caseId) {
-        const response = await fetch(`${API_URL}/files/case/${caseId}/bsa63-manifest`, {
-            headers: { "Authorization": `Bearer ${token}` }
-        });
+    static async getBsa63Manifest(_token, caseId) {
+        const cid = caseId !== undefined ? caseId : _token;
+        const response = await apiFetch(`/files/case/${cid}/bsa63-manifest`);
         if (!response.ok) {
             const err = await response.json().catch(() => ({}));
             throw new Error(err.detail || "Failed to fetch Section 63 BSA manifest");
@@ -369,14 +324,11 @@ class API {
         return response.json();
     }
 
-    static async createFreezeRequest(token, caseId, payload) {
-        const response = await fetch(`${API_URL}/freeze/request/${caseId}`, {
+    static async createFreezeRequest(_token, caseId, payload) {
+        const response = await apiFetch(`/freeze/request/${caseId}`, {
             method: "POST",
-            headers: {
-                "Authorization": `Bearer ${token}`,
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify(payload)
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
         });
         if (!response.ok) {
             const err = await response.json().catch(() => ({}));
@@ -385,18 +337,25 @@ class API {
         return response.json();
     }
 
-    static async getFreezeRequests(token) {
-        const response = await fetch(`${API_URL}/freeze/requests/`, {
-            headers: { "Authorization": `Bearer ${token}` }
-        });
+    static async getFreezeRequests() {
+        const response = await apiFetch(`/freeze/requests/`);
         if (!response.ok) throw new Error("Failed to fetch freeze requests");
         return response.json();
     }
 
-    static async verifyAuditChain(token) {
-        const response = await fetch(`${API_URL}/admin/logs/verify`, {
-            headers: { "Authorization": `Bearer ${token}` }
-        });
+    static async updateFreezeStatus(requestId, status, bankReference = null) {
+        let url = `/freeze/requests/${requestId}/status?status=${encodeURIComponent(status)}`;
+        if (bankReference) url += `&bank_reference=${encodeURIComponent(bankReference)}`;
+        const response = await apiFetch(url, { method: "PATCH" });
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.detail || "Failed to update freeze request status");
+        }
+        return response.json();
+    }
+
+    static async verifyAuditChain() {
+        const response = await apiFetch(`/admin/logs/verify`);
         if (!response.ok) {
             const err = await response.json().catch(() => ({}));
             throw new Error(err.detail || "Audit chain verification failed");
@@ -404,19 +363,29 @@ class API {
         return response.json();
     }
 
-    static async getCaseTimeline(token, caseId) {
-        const response = await fetch(`${API_URL}/analytics/timeline/${caseId}`, {
-            headers: { "Authorization": `Bearer ${token}` }
-        });
+    static async getCaseTimeline(_token, caseId) {
+        const cid = caseId !== undefined ? caseId : _token;
+        const response = await apiFetch(`/analytics/timeline/${cid}`);
         if (!response.ok) throw new Error("Failed to fetch case timeline");
         return response.json();
     }
 
-    static async getCaseRequests(token, caseId) {
-        const response = await fetch(`${API_URL}/requests/?case_id=${encodeURIComponent(caseId)}`, {
-            headers: { "Authorization": `Bearer ${token}` }
-        });
+    static async getCaseRequests(_token, caseId) {
+        const cid = caseId !== undefined ? caseId : _token;
+        const response = await apiFetch(`/requests/?case_id=${encodeURIComponent(cid)}`);
         if (!response.ok) throw new Error("Failed to fetch case requests");
+        return response.json();
+    }
+
+    static async analyzeTowerCoLocation(caseId, windowMinutes = 15) {
+        const response = await apiFetch(
+            `/analysis/tower-co-location?case_id=${encodeURIComponent(caseId)}&window_minutes=${encodeURIComponent(windowMinutes)}`,
+            { method: "POST" }
+        );
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.detail || "Tower co-location analysis failed");
+        }
         return response.json();
     }
 }

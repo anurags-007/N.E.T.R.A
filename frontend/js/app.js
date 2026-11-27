@@ -1,14 +1,62 @@
-const token = localStorage.getItem('token');
-
-if (!token) {
-    window.location.href = 'index.html';
-}
-
 // Logout
-document.getElementById('logoutBtn').addEventListener('click', async () => {
-    await API.logout(token);
-    localStorage.removeItem('token');
+document.getElementById('logoutBtn')?.addEventListener('click', async () => {
+    await API.logout();
     window.location.href = 'index.html';
+});
+
+document.getElementById('refreshCasesBtn')?.addEventListener('click', () => loadCases());
+document.getElementById('statusFilter')?.addEventListener('change', () => { if (typeof filterCases === 'function') filterCases(); });
+document.getElementById('sortBy')?.addEventListener('change', () => { if (typeof filterCases === 'function') filterCases(); });
+document.getElementById('clearFiltersBtn')?.addEventListener('click', () => { if (typeof clearFilters === 'function') clearFilters(); });
+
+// Service Worker, Sidebar, Theme & Geolocation (strict CSP - external JS)
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/frontend/sw.js').catch(() => {});
+}
+const sidebarEl = document.querySelector('.sidebar');
+const toggleBtn = document.getElementById('sidebarToggle');
+if (toggleBtn && sidebarEl) {
+    toggleBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        sidebarEl.classList.toggle('active');
+    });
+    document.addEventListener('click', (e) => {
+        if (window.innerWidth <= 768 && sidebarEl.classList.contains('active') && !sidebarEl.contains(e.target) && e.target !== toggleBtn) {
+            sidebarEl.classList.remove('active');
+        }
+    });
+}
+const darkModeBtn = document.getElementById('darkModeToggle');
+if (localStorage.getItem('theme') === 'dark') {
+    document.body.classList.add('dark-mode');
+    if (darkModeBtn) darkModeBtn.innerHTML = '<i class="bi bi-sun-fill"></i>';
+}
+darkModeBtn?.addEventListener('click', () => {
+    document.body.classList.toggle('dark-mode');
+    const isDark = document.body.classList.contains('dark-mode');
+    localStorage.setItem('theme', isDark ? 'dark' : 'light');
+    darkModeBtn.innerHTML = isDark ? '<i class="bi bi-sun-fill"></i>' : '<i class="bi bi-moon-stars"></i>';
+});
+const geoBtn = document.getElementById('geoLocateBtn');
+const descField = document.getElementById('caseDescription');
+geoBtn?.addEventListener('click', () => {
+    if (!navigator.geolocation) {
+        if (typeof showToast === 'function') showToast('Geolocation not supported.', 'warning');
+        return;
+    }
+    geoBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+    geoBtn.disabled = true;
+    navigator.geolocation.getCurrentPosition(
+        (position) => {
+            if (descField) descField.value += `\n[LOCATION: ${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)} (±${position.coords.accuracy.toFixed(1)}m)]`;
+            geoBtn.innerHTML = '<i class="bi bi-check-lg"></i> Added';
+            setTimeout(() => { geoBtn.innerHTML = '<i class="bi bi-geo-alt-fill"></i> Add Loc'; geoBtn.disabled = false; }, 2000);
+        },
+        () => {
+            geoBtn.innerHTML = '<i class="bi bi-exclamation-circle"></i> Retry';
+            geoBtn.disabled = false;
+        }
+    );
 });
 
 // ========== SECURITY: HTML SANITIZATION ==========
@@ -32,15 +80,16 @@ if (window.location.hostname !== 'localhost' && window.location.hostname !== '12
 // Load Data
 async function init() {
     try {
-        const payload = JSON.parse(atob(token.split('.')[1]));
+        const me = await API.getMe();
         const user = {
-            username: payload.sub,
-            role: payload.role,
-            rank: payload.rank || payload.role,
-            station: payload.station,
-            district: payload.district,
-            zone: payload.zone
+            username: me.username,
+            role: me.role,
+            rank: me.rank || me.role,
+            station: me.station_name,
+            district: me.district_name,
+            zone: me.zone_name
         };
+        if (typeof setRoleBasedNav === 'function') setRoleBasedNav(user.role);
 
         // Display Scope info
         let scopeText = "";
@@ -91,7 +140,6 @@ async function init() {
         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
             console.error(err);
         }
-        localStorage.removeItem('token');
         window.location.href = 'index.html';
     }
 }
@@ -176,7 +224,7 @@ if (entityTypeSelect) {
 
 async function loadCases() {
     try {
-        const cases = await API.getCases(token);
+        const cases = await API.getCases();
 
         // Update Stats
         const countDisplay = document.getElementById('totalCasesCount');
@@ -298,7 +346,7 @@ document.getElementById('newCaseForm').addEventListener('submit', async (e) => {
         const data = Object.fromEntries(formData.entries());
 
         // 1. Create the Case
-        const caseRes = await API.createCase(token, {
+        const caseRes = await API.createCase(null, {
             fir_number: data.fir_number,
             police_station: data.police_station,
             case_category: data.case_category,
@@ -321,7 +369,7 @@ document.getElementById('newCaseForm').addEventListener('submit', async (e) => {
                 transaction_amount: data.transaction_amount || null
             };
 
-            await API.createFinancialEntity(token, caseRes.id, entityData);
+            await API.createFinancialEntity(null, caseRes.id, entityData);
             console.log("Financial Entity Linked");
         }
 

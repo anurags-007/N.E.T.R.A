@@ -317,9 +317,11 @@ class FreezeRequest(Base):
     freeze_initiated_at = Column(DateTime(timezone=True), nullable=True)
     freeze_confirmed_at = Column(DateTime(timezone=True), nullable=True)
     
-    # Status Tracking
-    status = Column(String, default="generated")  # generated, sent, confirmed, expired
+    # Status Tracking (Maker-Checker Sec 106 BNSS)
+    status = Column(String, default="pending")  # pending, approved, sent, confirmed, expired, rejected
     bank_reference_number = Column(String, nullable=True)
+    reviewer_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
     
     # Generated Files
     request_file_path = Column(String, nullable=True)
@@ -327,6 +329,7 @@ class FreezeRequest(Base):
     # Relationships
     case = relationship("Case", back_populates="freeze_requests")
     financial_entity = relationship("FinancialEntity")
+    reviewer = relationship("User")
 
 
 class TokenBlocklist(Base):
