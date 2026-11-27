@@ -166,6 +166,10 @@ textarea::placeholder {
     border-color: var(--netra-border) !important;
 }
 
+[data-bs-theme="dark"] .sidebar .nav-link.active {
+    color: #1e3a8a !important;
+}
+
 [data-bs-theme="dark"] .btn-close {
     filter: invert(1) grayscale(100%) brightness(200%);
 }

@@ -62,7 +62,7 @@ async function loadLogs() {
     tbody.innerHTML = '<tr><td colspan="4" class="text-center py-4">Loading logs...</td></tr>';
 
     try {
-        const logs = await API.getAuditLogs(token);
+        const logs = await API.getAuditLogs();
         tbody.innerHTML = '';
 
         if (logs.length === 0) {
@@ -117,7 +117,7 @@ document.getElementById('registerOfficerForm').addEventListener('submit', async 
     const data = Object.fromEntries(formData.entries());
 
     try {
-        await API.register(data.username, data.email, data.password, data.role, token, {
+        await API.register(data.username, data.email, data.password, data.role, null, {
             station_name: data.station_name?.trim() || null,
             sub_division: data.sub_division?.trim() || null,
             district_name: data.district_name?.trim() || null,
