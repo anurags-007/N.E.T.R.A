@@ -64,43 +64,7 @@ Verified against real public datasets in `scripts/ingest_real_datasets.py` (full
 
 ---
 
-## Quickstart Guide
 
-### Option 1: One-Click Cloud Deploy (Render + Neon PostgreSQL)
-1. Provision a free PostgreSQL database on [Neon](https://console.neon.tech) and copy the `postgresql://...?sslmode=require` connection string.
-2. Seed the cloud database once from your local shell:
-   ```bash
-   DATABASE_URL="postgresql://..." python scripts/ingest_real_datasets.py
-   ```
-3. In [Render Dashboard](https://dashboard.render.com), click **New + → Blueprint**, connect `anurags-007/N.E.T.R.A` (`main` branch, uses root [`render.yaml`](render.yaml)), and set:
-   - `DATABASE_URL` = your Neon PostgreSQL connection string
-   - `ENCRYPTION_KEYS` = generated Fernet key (`python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`)
-   - `ALLOWED_ORIGINS` = `https://<your-service>.onrender.com`
-
-### Option 2: Production Deployment with Docker Compose (PostgreSQL 16)
-1. Configure `.env` with strong production secrets (never commit `.env`):
-   ```bash
-   cp .env.example .env
-   # Generate SECRET_KEY and ENCRYPTION_KEYS using Python secrets / cryptography.fernet
-   ```
-2. Start PostgreSQL and the hardened non-root Gunicorn container on port `8001`:
-   ```bash
-   docker compose up -d --build
-   ```
-3. Access the portal at `http://localhost:8001/frontend/index.html`.
-
-### Option 2: Local Python Setup (Windows / Linux)
-```powershell
-python -m venv .venv
-# Windows PowerShell: .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-# Linux/macOS:        source .venv/bin/activate && pip install -r requirements.txt
-
-# Populate realistic Indian station cases, DoT CDRs & PaySim fraud data
-.\.venv\Scripts\python.exe scripts\ingest_real_datasets.py
-
-# Run FastAPI on port 8001
-.\.venv\Scripts\python.exe -m uvicorn backend.main:app --port 8001 --reload
-```
 
 ### Seeded Demo Station Credentials
 | Role / Station | Username | Password | Scope |
@@ -113,17 +77,3 @@ python -m venv .venv
 
 ---
 
-## Project Structure
-
-```text
-├── backend/              # FastAPI app, RBAC, hash-chained audit, routers & forensic engines
-├── frontend/             # Bootstrap 5 UI, self-hosted DOMPurify, Vis.js & Service Worker
-├── data/                 # SQLite dev DB, GeoLite2/India towers, datasets, encrypted uploads
-├── deploy/               # PaaS configs (Procfile, render.yaml, CNAME)
-├── docs/                 # R&D, Remediation & Dataset Integration reports
-├── scripts/              # Dataset ingestion & live end-to-end verification CLIs
-├── tests/                # Pytest security, RBAC & forensics regression suite
-├── Dockerfile            # Non-root multi-stage production container
-├── docker-compose.yml    # PostgreSQL 16 + FastAPI/Gunicorn stack
-└── requirements.txt
-```
