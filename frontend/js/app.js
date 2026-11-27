@@ -10,7 +10,7 @@ document.getElementById('statusFilter')?.addEventListener('change', () => { if (
 document.getElementById('sortBy')?.addEventListener('change', () => { if (typeof filterCases === 'function') filterCases(); });
 document.getElementById('clearFiltersBtn')?.addEventListener('click', () => { if (typeof clearFilters === 'function') clearFilters(); });
 
-// Service Worker, Sidebar, Theme & Geolocation (strict CSP - external JS)
+// Service Worker, Sidebar & Geolocation (theme handled by theme.js)
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/frontend/sw.js').catch(() => {});
 }
@@ -27,17 +27,6 @@ if (toggleBtn && sidebarEl) {
         }
     });
 }
-const darkModeBtn = document.getElementById('darkModeToggle');
-if (localStorage.getItem('theme') === 'dark') {
-    document.body.classList.add('dark-mode');
-    if (darkModeBtn) darkModeBtn.innerHTML = '<i class="bi bi-sun-fill"></i>';
-}
-darkModeBtn?.addEventListener('click', () => {
-    document.body.classList.toggle('dark-mode');
-    const isDark = document.body.classList.contains('dark-mode');
-    localStorage.setItem('theme', isDark ? 'dark' : 'light');
-    darkModeBtn.innerHTML = isDark ? '<i class="bi bi-sun-fill"></i>' : '<i class="bi bi-moon-stars"></i>';
-});
 const geoBtn = document.getElementById('geoLocateBtn');
 const descField = document.getElementById('caseDescription');
 geoBtn?.addEventListener('click', () => {

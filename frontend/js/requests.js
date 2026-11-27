@@ -8,7 +8,7 @@ document.getElementById('logoutBtn')?.addEventListener('click', async () => {
     window.location.href = 'index.html';
 });
 
-// Service Worker, Sidebar, Theme & Filter bindings (strict CSP - external JS)
+// Service Worker, Sidebar & Filter bindings (theme handled by theme.js)
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/frontend/sw.js').catch(() => {});
 }
@@ -22,17 +22,6 @@ if (toggleBtn && sidebarEl) {
         }
     });
 }
-const darkModeBtn = document.getElementById('darkModeToggle');
-if (localStorage.getItem('theme') === 'dark') {
-    document.body.classList.add('dark-mode');
-    if (darkModeBtn) darkModeBtn.innerHTML = '<i class="bi bi-sun-fill"></i>';
-}
-darkModeBtn?.addEventListener('click', () => {
-    document.body.classList.toggle('dark-mode');
-    const isDark = document.body.classList.contains('dark-mode');
-    localStorage.setItem('theme', isDark ? 'dark' : 'light');
-    darkModeBtn.innerHTML = isDark ? '<i class="bi bi-sun-fill"></i>' : '<i class="bi bi-moon-stars"></i>';
-});
 
 document.getElementById('requestSearchInput')?.addEventListener('keyup', () => filterRequests());
 document.getElementById('requestStatusFilter')?.addEventListener('change', () => filterRequests());

@@ -1,0 +1,250 @@
+/* N.E.T.R.A. Unified High-Contrast Light & Dark Theme System (Strict CSP) */
+:root,
+[data-bs-theme="light"] {
+    --netra-bg: #f4f6f9;
+    --netra-surface: #ffffff;
+    --netra-surface-alt: #f8fafc;
+    --netra-text: #0f172a;
+    --netra-muted: #475569;
+    --netra-border: #e2e8f0;
+    --netra-input-bg: #ffffff;
+    --netra-primary: #1e3a8a;
+    --netra-hover: #f1f5f9;
+}
+
+[data-bs-theme="dark"] {
+    --netra-bg: #0b1120;
+    --netra-surface: #111827;
+    --netra-surface-alt: #1e293b;
+    --netra-text: #f1f5f9;
+    --netra-muted: #94a3b8;
+    --netra-border: #334155;
+    --netra-input-bg: #0f172a;
+    --netra-primary: #60a5fa;
+    --netra-hover: #1e293b;
+
+    --bg-light: #0b1120;
+    --bg-white: #111827;
+    --text-main: #f1f5f9;
+    --text-muted: #94a3b8;
+    --border-color: #334155;
+    --primary-color: #60a5fa;
+}
+
+/* Base Surface & Typography */
+body {
+    background-color: var(--netra-bg) !important;
+    color: var(--netra-text) !important;
+    transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+h1, h2, h3, h4, h5, h6,
+.page-title {
+    color: var(--netra-text);
+}
+
+.page-subtitle,
+.text-muted,
+.text-secondary {
+    color: var(--netra-muted) !important;
+}
+
+/* Login Page Centering & Footer Alignment */
+.login-body {
+    flex-direction: column;
+    gap: 1.25rem;
+    padding: 1.5rem;
+    background-color: var(--netra-bg) !important;
+}
+
+.login-container {
+    background-color: var(--netra-surface) !important;
+    color: var(--netra-text) !important;
+    border: 1px solid var(--netra-border) !important;
+}
+
+[data-bs-theme="dark"] .login-title,
+[data-bs-theme="dark"] .login-brand i {
+    color: #93c5fd !important;
+}
+
+/* Cards, Modals, Dropdowns, List Groups */
+.card,
+.card-custom,
+.modal-content,
+.dropdown-menu {
+    background-color: var(--netra-surface) !important;
+    color: var(--netra-text) !important;
+    border: 1px solid var(--netra-border) !important;
+}
+
+.card-header,
+.card-footer,
+.modal-header:not(.bg-primary):not(.bg-dark):not(.bg-danger):not(.bg-success),
+.modal-footer {
+    background-color: var(--netra-surface-alt) !important;
+    color: var(--netra-text) !important;
+    border-color: var(--netra-border) !important;
+}
+
+.list-group-item {
+    background-color: var(--netra-surface) !important;
+    color: var(--netra-text) !important;
+    border-color: var(--netra-border) !important;
+}
+
+/* Tabular Numbers & Clean Table Contrast */
+.table {
+    --bs-table-bg: var(--netra-surface);
+    --bs-table-color: var(--netra-text);
+    --bs-table-border-color: var(--netra-border);
+    --bs-table-striped-bg: var(--netra-surface-alt);
+    --bs-table-striped-color: var(--netra-text);
+    --bs-table-hover-bg: var(--netra-hover);
+    --bs-table-hover-color: var(--netra-text);
+    color: var(--netra-text) !important;
+    font-variant-numeric: tabular-nums;
+}
+
+.table thead th {
+    background-color: var(--netra-surface-alt) !important;
+    color: var(--netra-muted) !important;
+    border-bottom: 2px solid var(--netra-border) !important;
+}
+
+.table tbody td {
+    color: var(--netra-text) !important;
+    border-color: var(--netra-border) !important;
+}
+
+.table-light {
+    --bs-table-bg: var(--netra-surface-alt);
+    --bs-table-color: var(--netra-text);
+}
+
+/* Form Controls & Placeholders */
+.form-control,
+.form-select,
+textarea.form-control,
+.input-group-text {
+    background-color: var(--netra-input-bg) !important;
+    color: var(--netra-text) !important;
+    border-color: var(--netra-border) !important;
+}
+
+.form-control::placeholder,
+textarea::placeholder {
+    color: var(--netra-muted) !important;
+    opacity: 0.85;
+}
+
+.form-control:disabled,
+.form-control[readonly],
+.form-select:disabled {
+    background-color: var(--netra-surface-alt) !important;
+    color: var(--netra-muted) !important;
+    opacity: 1;
+}
+
+.form-label {
+    color: var(--netra-muted) !important;
+}
+
+/* Override Hardcoded Bootstrap Light Utilities in Dark Mode */
+[data-bs-theme="dark"] .bg-white,
+[data-bs-theme="dark"] .bg-light {
+    background-color: var(--netra-surface-alt) !important;
+    color: var(--netra-text) !important;
+}
+
+[data-bs-theme="dark"] .text-dark,
+[data-bs-theme="dark"] .text-black {
+    color: var(--netra-text) !important;
+}
+
+[data-bs-theme="dark"] .border {
+    border-color: var(--netra-border) !important;
+}
+
+[data-bs-theme="dark"] .btn-close {
+    filter: invert(1) grayscale(100%) brightness(200%);
+}
+
+[data-bs-theme="dark"] .btn-outline-dark {
+    color: #e2e8f0;
+    border-color: #64748b;
+}
+
+[data-bs-theme="dark"] .btn-outline-dark:hover {
+    background-color: #334155;
+    color: #ffffff;
+}
+
+[data-bs-theme="dark"] .btn-outline-secondary {
+    color: #cbd5e1;
+    border-color: #64748b;
+}
+
+/* High-Contrast Badges in Both Modes */
+.badge.bg-warning {
+    color: #0f172a !important;
+}
+
+.badge.bg-info {
+    color: #0f172a !important;
+}
+
+.badge.bg-light {
+    background-color: var(--netra-surface-alt) !important;
+    color: var(--netra-text) !important;
+    border: 1px solid var(--netra-border);
+}
+
+.badge.bg-secondary {
+    background-color: #475569 !important;
+    color: #ffffff !important;
+}
+
+.badge.bg-success {
+    background-color: #15803d !important;
+    color: #ffffff !important;
+}
+
+.badge.bg-danger {
+    background-color: #b91c1c !important;
+    color: #ffffff !important;
+}
+
+/* Dark Mode Alerts */
+[data-bs-theme="dark"] .alert-light,
+[data-bs-theme="dark"] .alert-info {
+    background-color: #1e293b !important;
+    color: #e2e8f0 !important;
+    border: 1px solid #334155;
+}
+
+[data-bs-theme="dark"] .alert-warning {
+    background-color: #451a03 !important;
+    color: #fde68a !important;
+    border: 1px solid #92400e;
+}
+
+[data-bs-theme="dark"] .alert-success {
+    background-color: #052e16 !important;
+    color: #bbf7d0 !important;
+    border: 1px solid #166534;
+}
+
+[data-bs-theme="dark"] .alert-danger {
+    background-color: #450a0a !important;
+    color: #fecaca !important;
+    border: 1px solid #991b1b;
+}
+
+/* Theme Toggle Pill on Login & Subpages */
+.netra-theme-fab {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    z-index: 1080;
+}

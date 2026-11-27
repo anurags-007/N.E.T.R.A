@@ -123,10 +123,19 @@ function renderResults(data) {
     renderHourlyChart(data.hourly_stats);
 }
 
+function getThemeChartColors() {
+    const cs = getComputedStyle(document.documentElement);
+    return {
+        text: cs.getPropertyValue('--netra-text').trim() || '#0f172a',
+        border: cs.getPropertyValue('--netra-border').trim() || '#e2e8f0',
+    };
+}
+
 function renderOutgoingChart(data) {
     const ctx = document.getElementById('outgoingChart').getContext('2d');
     const labels = Object.keys(data);
     const values = Object.values(data);
+    const themeColors = getThemeChartColors();
 
     if (outgoingChart) outgoingChart.destroy();
 
@@ -144,8 +153,10 @@ function renderOutgoingChart(data) {
         },
         options: {
             responsive: true,
+            plugins: { legend: { labels: { color: themeColors.text } } },
             scales: {
-                y: { beginAtZero: true }
+                x: { ticks: { color: themeColors.text }, grid: { color: themeColors.border } },
+                y: { beginAtZero: true, ticks: { color: themeColors.text }, grid: { color: themeColors.border } }
             }
         }
     });
@@ -153,9 +164,9 @@ function renderOutgoingChart(data) {
 
 function renderHourlyChart(data) {
     const ctx = document.getElementById('hourlyChart').getContext('2d');
-    // Ensure all 24 hours exist
     const labels = Array.from({ length: 24 }, (_, i) => i);
     const values = labels.map(h => data[h] || 0);
+    const themeColors = getThemeChartColors();
 
     if (hourlyChart) hourlyChart.destroy();
 
@@ -175,12 +186,27 @@ function renderHourlyChart(data) {
         },
         options: {
             responsive: true,
+            plugins: { legend: { labels: { color: themeColors.text } } },
             scales: {
-                y: { beginAtZero: true }
+                x: { ticks: { color: themeColors.text }, grid: { color: themeColors.border } },
+                y: { beginAtZero: true, ticks: { color: themeColors.text }, grid: { color: themeColors.border } }
             }
         }
     });
 }
+
+window.addEventListener('netra:themechange', () => {
+    const tc = getThemeChartColors();
+    [outgoingChart, hourlyChart].forEach(ch => {
+        if (!ch) return;
+        ch.options.plugins.legend.labels.color = tc.text;
+        ch.options.scales.x.ticks.color = tc.text;
+        ch.options.scales.x.grid.color = tc.border;
+        ch.options.scales.y.ticks.color = tc.text;
+        ch.options.scales.y.grid.color = tc.border;
+        ch.update();
+    });
+});
 
 // Enhanced Universal Search Logic
 document.getElementById('globalSearchForm').addEventListener('submit', async (e) => {
@@ -696,10 +722,11 @@ async function visualizeNetwork(event) {
         const visNodes = new vis.DataSet(data.nodes);
         const visEdges = new vis.DataSet(data.edges);
 
+        const tc = getThemeChartColors();
         const options = {
             nodes: {
                 shape: 'dot',
-                font: { size: 14, color: '#343a40', face: 'Inter' },
+                font: { size: 14, color: tc.text, face: 'Inter' },
                 borderWidth: 2,
                 shadow: true
             },
