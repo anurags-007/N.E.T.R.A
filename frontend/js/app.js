@@ -5,6 +5,7 @@ document.getElementById('logoutBtn')?.addEventListener('click', async () => {
 });
 
 document.getElementById('refreshCasesBtn')?.addEventListener('click', () => loadCases());
+document.getElementById('caseSearchInput')?.addEventListener('keyup', () => { if (typeof filterCases === 'function') filterCases(); });
 document.getElementById('statusFilter')?.addEventListener('change', () => { if (typeof filterCases === 'function') filterCases(); });
 document.getElementById('sortBy')?.addEventListener('change', () => { if (typeof filterCases === 'function') filterCases(); });
 document.getElementById('clearFiltersBtn')?.addEventListener('click', () => { if (typeof clearFilters === 'function') clearFilters(); });

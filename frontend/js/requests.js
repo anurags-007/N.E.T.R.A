@@ -34,6 +34,7 @@ darkModeBtn?.addEventListener('click', () => {
     darkModeBtn.innerHTML = isDark ? '<i class="bi bi-sun-fill"></i>' : '<i class="bi bi-moon-stars"></i>';
 });
 
+document.getElementById('requestSearchInput')?.addEventListener('keyup', () => filterRequests());
 document.getElementById('requestStatusFilter')?.addEventListener('change', () => filterRequests());
 document.getElementById('requestTypeFilter')?.addEventListener('change', () => filterRequests());
 document.getElementById('requestSortBy')?.addEventListener('change', () => filterRequests());
