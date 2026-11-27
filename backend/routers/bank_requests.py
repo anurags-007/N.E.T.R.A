@@ -1,5 +1,5 @@
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import func
 
@@ -70,8 +70,8 @@ def create_bank_request(
 
 @router.get("/requests/", response_model=List[schemas.BankRequestResponse])
 def get_bank_requests(
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user)
 ):
@@ -120,6 +120,8 @@ def approve_bank_request(
     if not request:
         raise HTTPException(status_code=404, detail="Bank request not found")
     authorize_case_access(request.case_id, current_user, db)
+    if request.status != models.RequestStatus.PENDING:
+        raise HTTPException(status_code=400, detail=f"Cannot approve bank request in '{request.status.value}' state")
     
     request.status = models.RequestStatus.APPROVED
     request.reviewer_id = current_user.id
@@ -157,6 +159,8 @@ def reject_bank_request(
     if not request:
         raise HTTPException(status_code=404, detail="Bank request not found")
     authorize_case_access(request.case_id, current_user, db)
+    if request.status != models.RequestStatus.PENDING:
+        raise HTTPException(status_code=400, detail=f"Cannot reject bank request in '{request.status.value}' state")
     
     request.status = models.RequestStatus.REJECTED
     request.reviewer_id = current_user.id
@@ -165,16 +169,23 @@ def reject_bank_request(
     
     db.commit()
     db.refresh(request)
+    record_audit_log(
+        db,
+        user_id=current_user.id,
+        action=f"Rejected bank request #{request_id}",
+        details=f"Bank: {request.bank_name}, Reason: {reason[:200]}",
+        commit=True,
+    )
     
     return request
 
 @router.get("/nodal/banks")
-def get_supported_banks():
+def get_supported_banks(current_user: models.User = Depends(get_current_active_user)):
     """Get list of all banks with nodal officer contacts"""
     return {"banks": get_all_banks()}
 
 @router.get("/nodal/email/{bank_name}")
-def get_bank_nodal_contact(bank_name: str):
+def get_bank_nodal_contact(bank_name: str, current_user: models.User = Depends(get_current_active_user)):
     """Get nodal officer email for a specific bank"""
     email = get_bank_nodal_email(bank_name)
     return {"bank": bank_name, "nodal_email": email}

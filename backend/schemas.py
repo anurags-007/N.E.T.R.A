@@ -1,5 +1,5 @@
-from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
-from typing import Optional, List
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from typing import Literal, Optional, List
 from datetime import datetime
 from backend.models import (
     UserRole, RequestStatus, CaseType, CaseCategory,
@@ -47,18 +47,19 @@ class TokenData(BaseModel):
 
 # Case Schemas
 class CaseBase(BaseModel):
-    fir_number: str
-    police_station: str
+    fir_number: str = Field(..., min_length=3, max_length=64)
+    police_station: str = Field(..., min_length=2, max_length=120)
     case_type: CaseType
     case_category: Optional[CaseCategory] = None
-    amount_involved: Optional[str] = "0"
-    description: Optional[str] = None
+    amount_involved: Optional[str] = Field("0", max_length=32)
+    description: Optional[str] = Field(None, max_length=5000)
 
 class CaseCreate(CaseBase):
-    pass
+    model_config = ConfigDict(extra="forbid")
 
 class CaseStatusUpdate(BaseModel):
-    status: str
+    status: Literal["active", "pending", "closed"]
+    model_config = ConfigDict(extra="forbid")
 
 class CaseResponse(CaseBase):
     id: int

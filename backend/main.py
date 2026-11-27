@@ -15,6 +15,10 @@ from backend.utils.limiter import limiter
 # Import middleware
 from backend.middleware.security import SecurityHeadersMiddleware, RequestLoggingMiddleware
 
+# Ensure runtime directories exist on fresh cloud containers
+for _runtime_dir in ("data/secure_uploads", "data/generated_requests", "data/geo"):
+    os.makedirs(_runtime_dir, exist_ok=True)
+
 # Create database tables
 Base.metadata.create_all(bind=engine)
 

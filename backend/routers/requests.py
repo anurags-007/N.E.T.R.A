@@ -1,17 +1,18 @@
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Query, status, File, UploadFile
 from starlette.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 
 from backend.database import get_db
 from backend import config, models, schemas
 from backend.routers.auth import get_current_active_user
+from backend.utils.audit import record_audit_log
 from backend.utils.pdf_gen import generate_request_pdf
 from backend.utils.rbac import authorize_case_access, get_accessible_case_ids
-from backend.utils.validation import sanitize_filename, validate_file_magic_and_zip
+from backend.utils.validation import read_upload_with_limit, sanitize_filename, validate_file_magic_and_zip
 
 router = APIRouter(
     prefix="/requests",
@@ -137,8 +138,8 @@ def create_batch_request(
 
 @router.get("/", response_model=List[schemas.RequestResponse])
 def read_requests(
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
     case_id: int = None,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user)
@@ -185,25 +186,22 @@ def approve_request(
     if not req:
         raise HTTPException(status_code=404, detail="Request not found")
     authorize_case_access(req.case_id, current_user, db)
-    
-    # MANUAL WORKFLOW REQUESTED
-    # Validated with user: Disable auto-stamping. 
-    # User will manually download, sign, and upload the file.
-    # 
-    # original_pdf_gen_logic_commented_out_for_manual_flow
-    # if case and req.request_file_path:
-    #     from backend.utils.pdf_gen import generate_approved_request_pdf
-    #     try:
-    #         generate_approved_request_pdf(...)
-    #     except Exception as e:
-    #         print(f"Warning: Could not regenerate approved PDF: {e}")
-    
+    if req.status != models.RequestStatus.PENDING:
+        raise HTTPException(status_code=400, detail=f"Cannot approve request in '{req.status.value}' state")
+
     req.status = models.RequestStatus.APPROVED
     req.reviewer_id = current_user.id
-    req.reviewed_at = datetime.utcnow()
+    req.reviewed_at = datetime.now(timezone.utc)
     
     db.commit()
     db.refresh(req)
+    record_audit_log(
+        db,
+        user_id=current_user.id,
+        action=f"Approved telecom request #{request_id}",
+        details=f"Mobile: {req.mobile_number}, Type: {req.request_type}",
+        commit=True,
+    )
     return req
 
 @router.post("/{request_id}/reject", response_model=schemas.RequestResponse)
@@ -231,14 +229,23 @@ def reject_request(
     if not req:
         raise HTTPException(status_code=404, detail="Request not found")
     authorize_case_access(req.case_id, current_user, db)
+    if req.status != models.RequestStatus.PENDING:
+        raise HTTPException(status_code=400, detail=f"Cannot reject request in '{req.status.value}' state")
     
     req.status = models.RequestStatus.REJECTED
     req.reviewer_id = current_user.id
-    req.reviewed_at = datetime.utcnow()
+    req.reviewed_at = datetime.now(timezone.utc)
     req.rejection_reason = reason
     
     db.commit()
     db.refresh(req)
+    record_audit_log(
+        db,
+        user_id=current_user.id,
+        action=f"Rejected telecom request #{request_id}",
+        details=f"Reason: {reason[:200]}",
+        commit=True,
+    )
     return req
 
 @router.get("/{request_id}/download")
@@ -291,12 +298,7 @@ async def upload_request_file(
             detail=f"Invalid file type. Allowed: {', '.join(sorted(config.ALLOWED_EXTENSIONS))}",
         )
 
-    content = await file.read()
-    if len(content) > config.MAX_FILE_SIZE_BYTES:
-        raise HTTPException(
-            status_code=413,
-            detail=f"File too large. Maximum size: {config.MAX_FILE_SIZE_MB}MB",
-        )
+    content = await read_upload_with_limit(file, config.MAX_FILE_SIZE_BYTES)
 
     is_safe, safety_err = validate_file_magic_and_zip(content, ext)
     if not is_safe:
@@ -338,5 +340,12 @@ def mark_request_dispatched(
     req.status = models.RequestStatus.DISPATCHED
     db.commit()
     db.refresh(req)
+    record_audit_log(
+        db,
+        user_id=current_user.id,
+        action=f"Dispatched telecom request #{request_id}",
+        details=f"Mobile: {req.mobile_number}",
+        commit=True,
+    )
     
     return req

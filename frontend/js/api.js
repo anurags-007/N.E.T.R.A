@@ -403,4 +403,20 @@ class API {
         }
         return response.json();
     }
+
+    static async getCaseTimeline(token, caseId) {
+        const response = await fetch(`${API_URL}/analytics/timeline/${caseId}`, {
+            headers: { "Authorization": `Bearer ${token}` }
+        });
+        if (!response.ok) throw new Error("Failed to fetch case timeline");
+        return response.json();
+    }
+
+    static async getCaseRequests(token, caseId) {
+        const response = await fetch(`${API_URL}/requests/?case_id=${encodeURIComponent(caseId)}`, {
+            headers: { "Authorization": `Bearer ${token}` }
+        });
+        if (!response.ok) throw new Error("Failed to fetch case requests");
+        return response.json();
+    }
 }

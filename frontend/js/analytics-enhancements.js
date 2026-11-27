@@ -124,7 +124,7 @@ async function exportToPDF() {
 // CSV Export
 function exportToCSV() {
     // Export repeat entities as CSV
-    fetch('http://localhost:8001/analytics/repeat-entities', {
+    fetch(`${API_URL}/analytics/repeat-entities`, {
         headers: {
             'Authorization': `Bearer ${token}`
         }
@@ -241,15 +241,26 @@ document.getElementById('autoRefreshToggle')?.addEventListener('change', functio
     }
 });
 
-// Notification system
+// Notification system (DOM-safe, no innerHTML)
 function showNotification(message, type = 'info') {
+    const allowedTypes = ['primary', 'secondary', 'success', 'danger', 'warning', 'info', 'light', 'dark'];
+    const safeType = allowedTypes.includes(type) ? type : 'info';
+
     const notifDiv = document.createElement('div');
-    notifDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+    notifDiv.className = `alert alert-${safeType} alert-dismissible fade show position-fixed`;
     notifDiv.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
-    notifDiv.innerHTML = `
-        <i class="bi bi-info-circle-fill me-2"></i>${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    `;
+
+    const icon = document.createElement('i');
+    icon.className = 'bi bi-info-circle-fill me-2';
+    notifDiv.appendChild(icon);
+    notifDiv.appendChild(document.createTextNode(String(message ?? '')));
+
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'btn-close';
+    closeBtn.setAttribute('data-bs-dismiss', 'alert');
+    notifDiv.appendChild(closeBtn);
+
     document.body.appendChild(notifDiv);
 
     setTimeout(() => {

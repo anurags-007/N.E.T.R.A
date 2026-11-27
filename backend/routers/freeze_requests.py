@@ -1,6 +1,6 @@
-from typing import List
+from typing import List, Literal
 import os
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import func
@@ -98,8 +98,8 @@ def create_freeze_request(
 
 @router.get("/requests/", response_model=List[schemas.FreezeRequestResponse])
 def get_freeze_requests(
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user)
 ):
@@ -156,7 +156,7 @@ def download_freeze_order_pdf(
 @router.patch("/requests/{request_id}/status")
 def update_freeze_status(
     request_id: int,
-    status: str,  # sent, confirmed, expired
+    status: Literal["sent", "confirmed", "expired"],  # sent, confirmed, expired
     bank_reference: str = None,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user)

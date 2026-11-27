@@ -524,3 +524,58 @@ def test_health_refresh_blocklist_prune_and_edge_cap(isolated_env):
     g_json = g_resp.json()
     assert len(g_json["edges"]) <= 1
     assert g_json["edges_truncated"] is True
+
+
+def test_owasp_remediations_and_guards(isolated_env):
+    client, SessionLocal, _ = isolated_env
+    data = _seed_demo_hierarchy(SessionLocal)
+    h_sec62 = _jwt_headers(data["si_sec62"])
+    h_sho62 = _jwt_headers(data["sho_sec62"])
+    c101 = data["case_101"].id
+
+    # 1. Nodal endpoints require authentication
+    assert client.get("/bank/nodal/banks").status_code == 401
+    assert client.get("/bank/nodal/email/State%20Bank%20of%20India").status_code == 401
+    assert client.get("/npci/nodal/email").status_code == 401
+    assert client.get("/bank/nodal/banks", headers=h_sec62).status_code == 200
+    assert client.get("/npci/nodal/email", headers=h_sec62).status_code == 200
+
+    # 2. SSRF post-DNS private-IP guard on /tools/ip-lookup
+    ssrf_resp = client.get("/tools/ip-lookup?query=localhost", headers=h_sec62)
+    assert ssrf_resp.status_code == 400
+
+    # 3. Tower dump rejects invalid extension & PE magic bytes
+    bad_td = client.post(
+        "/tools/analyze-tower-dump",
+        headers=h_sec62,
+        files=[
+            ("files", ("a.csv", b"MZ\x90\x00PE-PAYLOAD", "text/csv")),
+            ("files", ("b.csv", b"col1,col2\n1,2\n", "text/csv")),
+        ],
+    )
+    assert bad_td.status_code == 400
+
+    # 4. State-transition guard on telecom/bank/npci approve & reject
+    req_resp = client.post(
+        f"/requests/?case_id={c101}",
+        headers=h_sec62,
+        json={"mobile_number": "9876543210", "request_type": "CDR", "reason": "State guard test"},
+    )
+    assert req_resp.status_code == 200
+    req_id = req_resp.json()["id"]
+    assert client.post(f"/requests/{req_id}/approve", headers=h_sho62).status_code == 200
+    assert client.post(f"/requests/{req_id}/approve", headers=h_sho62).status_code == 400
+    assert client.post(f"/requests/{req_id}/reject?reason=late", headers=h_sho62).status_code == 400
+
+    # 5. Status literal validation & pagination limit cap
+    assert client.patch(f"/cases/{c101}/status", headers=h_sho62, json={"status": "invalid_state"}).status_code == 422
+    assert client.patch(f"/freeze/requests/{data['frz_101'].id}/status?status=invalid_state", headers=h_sho62).status_code == 422
+    assert client.get("/cases/?limit=9999", headers=h_sec62).status_code == 422
+
+    # 6. Audit logs recorded for case status & telecom approval
+    db = SessionLocal()
+    try:
+        actions = {row.action for row in db.query(models.AuditLog).all()}
+        assert f"Approved telecom request #{req_id}" in actions
+    finally:
+        db.close()

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
+import hashlib
 import os
 import uuid
 from cryptography.fernet import Fernet, MultiFernet
@@ -9,9 +10,10 @@ from cryptography.fernet import Fernet, MultiFernet
 from backend import config, models
 from backend.database import get_db
 from backend.routers.auth import get_current_active_user
+from backend.utils.audit import record_audit_log
 from backend.utils.evidence_analysis import process_file
 from backend.utils.rbac import authorize_case_access
-from backend.utils.validation import sanitize_filename, validate_file_magic_and_zip
+from backend.utils.validation import read_upload_with_limit, sanitize_filename, validate_file_magic_and_zip
 
 router = APIRouter(prefix="/evidence", tags=["evidence"])
 
@@ -41,12 +43,7 @@ async def upload_evidence(
             detail=f"Invalid file type. Allowed: {', '.join(sorted(config.ALLOWED_EXTENSIONS))}",
         )
 
-    content = await file.read()
-    if len(content) > config.MAX_FILE_SIZE_BYTES:
-        raise HTTPException(
-            status_code=413,
-            detail=f"File too large. Maximum size: {config.MAX_FILE_SIZE_MB}MB",
-        )
+    content = await read_upload_with_limit(file, config.MAX_FILE_SIZE_BYTES)
 
     is_safe, safety_err = validate_file_magic_and_zip(content, ext)
     if not is_safe:
@@ -76,7 +73,29 @@ async def upload_evidence(
 
     result = await run_in_threadpool(_process_and_encrypt)
 
+    file_hash = hashlib.sha256(content).hexdigest()
+    new_ev = models.Evidence(
+        case_id=case_id,
+        file_type="FALLBACK_ANALYSIS",
+        file_path=dest_path,
+        file_hash=file_hash,
+        original_filename=safe_name,
+        uploaded_by_id=current_user.id,
+        uploaded_by_rank=current_user.rank,
+        verification_status="pending",
+    )
+    db.add(new_ev)
+    record_audit_log(
+        db,
+        user_id=current_user.id,
+        action="UPLOAD_EVIDENCE",
+        details=f"Uploaded fallback evidence {safe_name} (Hash: {file_hash}) for case_id={case_id}",
+    )
+    db.commit()
+    db.refresh(new_ev)
+
     result.setdefault("Notes", "")
     result["Notes"] = (result.get("Notes") + " ").strip()
     result["Stored Copy Path"] = dest_path
+    result["evidence_id"] = new_ev.id
     return JSONResponse(content=result)

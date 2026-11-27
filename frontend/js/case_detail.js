@@ -8,6 +8,11 @@ if (!token || !caseId) {
 
 // Global scope for button logic
 let userRole = null;
+let cachedCaseInfo = null;
+let cachedEvidenceList = [];
+let cachedFinancialEntities = [];
+let cachedFreezeRequests = [];
+let cachedTimeline = { timeline: [] };
 
 document.getElementById('logoutBtn')?.addEventListener('click', async () => {
     await API.logout(token);
@@ -50,6 +55,7 @@ async function init() {
 
         // Load Case Info
         const caseInfo = await API.getCase(token, caseId);
+        cachedCaseInfo = caseInfo;
         renderCaseInfo(caseInfo);
 
         // Show Close Button if Active and Authorized
@@ -64,7 +70,9 @@ async function init() {
 
     } catch (err) {
         console.error(err);
-        alert("Failed to load case data");
+        if (typeof showToast === 'function') {
+            showToast("Failed to load case data", "danger");
+        }
     }
 }
 
@@ -98,6 +106,7 @@ function renderCaseInfo(c) {
 async function loadEvidence() {
     try {
         const evidenceList = await API.getEvidence(token, caseId);
+        cachedEvidenceList = evidenceList;
         const tbody = document.getElementById('evidenceTableBody');
         tbody.innerHTML = '';
 
@@ -312,7 +321,7 @@ async function viewEvidence(id, filename, integrityHash) {
             ul.className = 'list-group list-group-flush text-start';
             zip.forEach((relativePath, zipEntry) => {
                 const li = document.createElement('li');
-                li.className = 'list-group-item bg-transparent text-white border-secondary';
+                li.className = 'list-group-item bg-transparent text-dark border-secondary';
                 const icon = document.createElement('i');
                 icon.className = `bi ${zipEntry.dir ? 'bi-folder-fill text-warning' : 'bi-file-earmark-text text-light'} me-2`;
                 li.appendChild(icon);
@@ -412,14 +421,24 @@ async function downloadFile(id) {
 }
 
 function showAlert(type, msg) {
+    if (typeof showToast === 'function') {
+        showToast(msg, type);
+    }
     const ph = document.getElementById('alertPlaceholder');
-    ph.innerHTML = `
-        <div class="alert alert-${escapeHtml(type)} alert-dismissible fade show" role="alert">
-            <span class="alert-msg"></span>
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-    `;
-    ph.querySelector('.alert-msg').textContent = msg;
+    if (!ph) return;
+    ph.innerHTML = '';
+    const alertDiv = document.createElement('div');
+    const allowed = ['primary', 'secondary', 'success', 'danger', 'warning', 'info', 'dark'];
+    const safeType = allowed.includes(type) ? type : 'info';
+    alertDiv.className = `alert alert-${safeType} alert-dismissible fade show`;
+    alertDiv.setAttribute('role', 'alert');
+    alertDiv.appendChild(document.createTextNode(String(msg ?? '')));
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'btn-close';
+    closeBtn.setAttribute('data-bs-dismiss', 'alert');
+    alertDiv.appendChild(closeBtn);
+    ph.appendChild(alertDiv);
     setTimeout(() => {
         ph.innerHTML = '';
     }, 5000);
@@ -430,7 +449,12 @@ let financialEntitiesMap = {}; // Id -> Entity Object
 
 async function loadFinancialData() {
     try {
-        const entities = await API.getFinancialEntities(token, caseId);
+        const [entities, timelineData] = await Promise.all([
+            API.getFinancialEntities(token, caseId),
+            API.getCaseTimeline(token, caseId).catch(() => ({ timeline: [] })),
+        ]);
+        cachedFinancialEntities = entities;
+        cachedTimeline = timelineData;
 
         if (entities.length > 0) {
             document.getElementById('financialCard').classList.remove('d-none');
@@ -484,6 +508,7 @@ async function loadFinancialData() {
             prefillFreezeInputs(entities[0]);
             await loadFreezeRequests();
         }
+        renderGoldenHourSummary(cachedCaseInfo, cachedFinancialEntities, cachedFreezeRequests, cachedTimeline);
     } catch (err) {
         console.error("Financial Data Error:", err);
     }
@@ -508,6 +533,7 @@ async function loadFreezeRequests() {
     try {
         const allReqs = await API.getFreezeRequests(token);
         const caseReqs = allReqs.filter(r => String(r.case_id) === String(caseId));
+        cachedFreezeRequests = caseReqs;
         listDiv.innerHTML = '';
         if (caseReqs.length === 0) return;
 
@@ -596,6 +622,186 @@ if (npciForm) {
         }
     });
 }
+// NCRP / 1930 Golden Hour Money-Trail & Lien Summary Card
+function renderGoldenHourSummary(caseInfo, entities, freezeReqs, timelineData) {
+    const card = document.getElementById('goldenHourCard');
+    if (!card) return;
+    const events = (timelineData && timelineData.timeline) || [];
+    const caseAmt = parseFloat(caseInfo?.amount_involved || '0') || 0;
+
+    if (entities.length === 0 && events.length === 0 && caseAmt <= 0) {
+        card.classList.add('d-none');
+        return;
+    }
+    card.classList.remove('d-none');
+
+    const toNum = (v) => {
+        const n = parseFloat(String(v || '0').replace(/[^\d.]/g, ''));
+        return Number.isFinite(n) ? n : 0;
+    };
+    const fmtINR = (n) => `₹${Math.round(n).toLocaleString('en-IN')}`;
+
+    const paymentSum = events
+        .filter(ev => ['payment', 'complaint_filed'].includes(String(ev.event_type || '').toLowerCase()))
+        .reduce((acc, ev) => acc + toNum(ev.amount), 0);
+    const entitySum = entities.reduce((acc, ent) => acc + toNum(ent.transaction_amount), 0);
+    const defrauded = Math.max(caseAmt, paymentSum, entitySum);
+
+    const hopTracedSum = events
+        .filter(ev => ['transfer', 'withdrawal'].includes(String(ev.event_type || '').toLowerCase()))
+        .reduce((acc, ev) => acc + toNum(ev.amount), 0);
+    const traced = Math.max(entitySum, hopTracedSum);
+
+    const frozenEntityIds = new Set(
+        freezeReqs
+            .filter(r => ['generated', 'sent', 'confirmed'].includes(String(r.status || '').toLowerCase()))
+            .map(r => r.financial_entity_id)
+    );
+    const frozen = entities
+        .filter(ent => frozenEntityIds.has(ent.id))
+        .reduce((acc, ent) => acc + toNum(ent.transaction_amount), 0);
+    const atRisk = Math.max(0, defrauded - frozen);
+
+    document.getElementById('ghDefrauded').textContent = fmtINR(defrauded);
+    document.getElementById('ghTraced').textContent = fmtINR(traced);
+    document.getElementById('ghFrozen').textContent = fmtINR(frozen);
+    document.getElementById('ghAtRisk').textContent = fmtINR(atRisk);
+
+    const statusBadge = document.getElementById('goldenHourStatusBadge');
+    if (statusBadge) {
+        statusBadge.textContent = frozen > 0 ? 'Lien Active (Sec 106 BNSS)' : 'Action Required (Unfrozen)';
+        statusBadge.className = frozen > 0 ? 'badge bg-success text-white' : 'badge bg-warning text-dark';
+    }
+
+    const trailDiv = document.getElementById('goldenHourHopTrail');
+    if (trailDiv) {
+        trailDiv.innerHTML = '';
+        const label = document.createElement('span');
+        label.className = 'fw-bold text-muted me-1';
+        label.textContent = 'CFCFRMS Hop Trail:';
+        trailDiv.appendChild(label);
+
+        entities.forEach((ent, idx) => {
+            if (idx > 0) {
+                const arrow = document.createElement('i');
+                arrow.className = 'bi bi-arrow-right text-muted';
+                trailDiv.appendChild(arrow);
+            }
+            const layerTag = idx === 0 ? 'Layer-1' : `Layer-${idx + 1}`;
+            const isFrozen = frozenEntityIds.has(ent.id);
+            const ident = ent.account_number || ent.upi_id || ent.wallet_provider || `Entity #${ent.id}`;
+            const amtText = toNum(ent.transaction_amount) > 0 ? ` (${fmtINR(toNum(ent.transaction_amount))})` : '';
+
+            const pill = document.createElement('span');
+            pill.className = `badge ${isFrozen ? 'bg-success' : 'bg-warning text-dark'} px-2 py-1`;
+            pill.textContent = `${layerTag}: ${ident}${amtText} · ${isFrozen ? 'LIEN-MARKED' : 'AT-RISK'}`;
+            trailDiv.appendChild(pill);
+        });
+    }
+}
+
+// One-Click IO Case Investigation Brief PDF Export
+document.getElementById('exportCaseBriefBtn')?.addEventListener('click', async () => {
+    try {
+        if (!window.jspdf || !window.jspdf.jsPDF) {
+            window.print();
+            return;
+        }
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+        const c = cachedCaseInfo || {};
+        const reqs = await API.getCaseRequests(token, caseId).catch(() => []);
+        const manifest = await API.getBsa63Manifest(token, caseId).catch(() => ({ evidence_items: [] }));
+
+        doc.setFillColor(13, 110, 253);
+        doc.rect(0, 0, 210, 20, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(14);
+        doc.text('N.E.T.R.A. — IO CASE INVESTIGATION BRIEF', 105, 13, { align: 'center' });
+
+        doc.setTextColor(0, 0, 0);
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`Generated: ${new Date().toLocaleString()} | FIR: ${c.fir_number || caseId}`, 14, 28);
+        doc.text(`Station: ${c.police_station || '-'} | Type: ${c.case_type || '-'} | Status: ${(c.status || '-').toUpperCase()}`, 14, 34);
+
+        let y = 42;
+        doc.autoTable({
+            startY: y,
+            head: [['Defrauded Inflow', 'Traced (L1/L2)', 'Frozen (Sec 106 BNSS)', 'At-Risk Balance']],
+            body: [[
+                document.getElementById('ghDefrauded')?.textContent || '₹0',
+                document.getElementById('ghTraced')?.textContent || '₹0',
+                document.getElementById('ghFrozen')?.textContent || '₹0',
+                document.getElementById('ghAtRisk')?.textContent || '₹0',
+            ]],
+            theme: 'grid',
+            headStyles: { fillColor: [33, 37, 41] },
+            styles: { fontSize: 9 },
+        });
+        y = doc.lastAutoTable.finalY + 8;
+
+        if (cachedFinancialEntities.length > 0) {
+            doc.setFont('helvetica', 'bold');
+            doc.text('Linked Suspect / Mule Financial Entities', 14, y);
+            y += 3;
+            doc.autoTable({
+                startY: y,
+                head: [['Type', 'Bank / PSP', 'Account / UPI ID', 'Amount', 'Status']],
+                body: cachedFinancialEntities.map(e => [
+                    e.entity_type || '-',
+                    e.bank_name || e.wallet_provider || '-',
+                    e.account_number || e.upi_id || '-',
+                    e.transaction_amount || '0',
+                    e.verification_status || '-',
+                ]),
+                theme: 'striped',
+                styles: { fontSize: 8 },
+            });
+            y = doc.lastAutoTable.finalY + 8;
+        }
+
+        if (reqs.length > 0 || cachedFreezeRequests.length > 0) {
+            doc.setFont('helvetica', 'bold');
+            doc.text('Section 94 & Section 106 BNSS Requisitions / Freeze Orders', 14, y);
+            y += 3;
+            const reqRows = [
+                ...reqs.map(r => ['Sec 94 BNSS', r.request_type, r.mobile_number, r.status]),
+                ...cachedFreezeRequests.map(f => ['Sec 106 BNSS Freeze', f.bank_name, f.account_number, f.status]),
+            ];
+            doc.autoTable({
+                startY: y,
+                head: [['Legal Provision', 'Target / Type', 'Identifier', 'Status']],
+                body: reqRows,
+                theme: 'striped',
+                styles: { fontSize: 8 },
+            });
+            y = doc.lastAutoTable.finalY + 8;
+        }
+
+        const evItems = manifest.evidence_items || cachedEvidenceList || [];
+        doc.setFont('helvetica', 'bold');
+        doc.text(`Section 63 BSA, 2023 Evidence Hash Manifest (${evItems.length} item(s))`, 14, y);
+        y += 3;
+        doc.autoTable({
+            startY: y,
+            head: [['Filename', 'Type', 'SHA-256 Digest', 'Status']],
+            body: evItems.length > 0
+                ? evItems.map(ev => [ev.original_filename || '-', ev.file_type || '-', ev.file_hash || '-', ev.verification_status || '-'])
+                : [['No evidence files uploaded yet', '-', '-', '-']],
+            theme: 'grid',
+            styles: { fontSize: 7 },
+        });
+
+        const safeFir = String(c.fir_number || caseId).replace(/[^\w.-]+/g, '_');
+        doc.save(`NETRA_Case_Brief_${safeFir}.pdf`);
+        showToast('Exported IO Case Investigation Brief PDF.', 'success');
+    } catch (err) {
+        showToast(err.message || 'Failed to export Case Brief', 'danger');
+    }
+});
+
 // Enhance Init to load financial data
 const originalInit = init;
 init = async function () {

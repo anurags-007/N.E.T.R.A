@@ -145,9 +145,29 @@ MAX_ZIP_UNCOMPRESSED_BYTES = 50 * 1024 * 1024  # 50 MB
 MAX_ZIP_FILES = 100
 
 
+async def read_upload_with_limit(upload_file, max_bytes: int, chunk_size: int = 1024 * 1024) -> bytes:
+    """Read an UploadFile in chunks and abort immediately with HTTP 413 if max_bytes is exceeded."""
+    from fastapi import HTTPException
+
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await upload_file.read(chunk_size)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large. Maximum size: {max_bytes // (1024 * 1024)}MB",
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 def validate_file_magic_and_zip(content: bytes, ext: str) -> tuple[bool, Optional[str]]:
     """
-    Verify file magic bytes match the declared extension and guard ZIPs against decompression bombs.
+    Verify file magic bytes match the declared extension and guard ZIP/OOXML archives against decompression bombs.
     Rejects renamed executables (MZ/ELF/Mach-O/shebang scripts disguised as documents/CSVs).
     """
     ext = (ext or "").lower()
@@ -170,17 +190,16 @@ def validate_file_magic_and_zip(content: bytes, ext: str) -> tuple[bool, Optiona
     elif ext in (".xlsx", ".docx", ".zip"):
         if not content.startswith((b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08")):
             return False, f"Invalid {ext} archive signature (magic bytes mismatch)"
-        if ext == ".zip":
-            try:
-                with zipfile.ZipFile(io.BytesIO(content)) as zf:
-                    infos = zf.infolist()
-                    if len(infos) > MAX_ZIP_FILES:
-                        return False, f"ZIP contains too many files ({len(infos)} > {MAX_ZIP_FILES})"
-                    total_uncompressed = sum(max(0, info.file_size) for info in infos)
-                    if total_uncompressed > MAX_ZIP_UNCOMPRESSED_BYTES:
-                        return False, "ZIP uncompressed size exceeds 50 MB limit (potential decompression bomb)"
-            except zipfile.BadZipFile:
-                return False, "Corrupted or invalid ZIP archive"
+        try:
+            with zipfile.ZipFile(io.BytesIO(content)) as zf:
+                infos = zf.infolist()
+                if len(infos) > MAX_ZIP_FILES:
+                    return False, f"Archive contains too many entries ({len(infos)} > {MAX_ZIP_FILES})"
+                total_uncompressed = sum(max(0, info.file_size) for info in infos)
+                if total_uncompressed > MAX_ZIP_UNCOMPRESSED_BYTES:
+                    return False, "Archive uncompressed size exceeds 50 MB limit (potential decompression bomb)"
+        except zipfile.BadZipFile:
+            return False, f"Corrupted or invalid {ext} archive"
     elif ext in (".xls", ".doc"):
         is_ole2 = content.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1")
         is_pk = content.startswith(b"PK\x03\x04")

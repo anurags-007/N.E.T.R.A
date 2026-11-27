@@ -53,11 +53,12 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
     """Log all requests with IP address and user agent"""
     
     async def dispatch(self, request: Request, call_next):
-        # Get client IP
+        # Get client IP (only trust X-Forwarded-For from explicitly trusted reverse proxies)
         client_ip = request.client.host if request.client else "unknown"
-        forwarded_for = request.headers.get("X-Forwarded-For")
-        if forwarded_for:
-            client_ip = forwarded_for.split(",")[0].strip()
+        if client_ip in config.TRUSTED_PROXIES:
+            forwarded_for = request.headers.get("X-Forwarded-For")
+            if forwarded_for:
+                client_ip = forwarded_for.split(",")[0].strip()
         
         # Get user agent
         user_agent = request.headers.get("User-Agent", "unknown")

@@ -1,7 +1,9 @@
+import logging
 import os
 import mimetypes
-import traceback
 from typing import Dict, Any
+
+logger = logging.getLogger(__name__)
 
 LEGAL_NOTICE = "All extracted data is generated solely to assist investigation. Original evidence remains primary and unaltered."
 
@@ -121,6 +123,7 @@ def process_file(path: str) -> Dict[str, Any]:
         return extraction
 
     except Exception:
-        extraction["Notes"] = traceback.format_exc()
+        logger.exception("Unexpected error processing evidence file: %s", path)
+        extraction["Notes"] = "Unexpected error occurred during evidence extraction."
         extraction["Confidence Level"] = "Low"
         return extraction

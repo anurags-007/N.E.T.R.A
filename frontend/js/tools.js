@@ -224,7 +224,10 @@ function setupTowerDump(token) {
 
     function showAlert(type, msg) {
         const ph = document.getElementById('alertPlaceholder');
-        if (!ph) { alert(msg); return; }
+        if (!ph) {
+            if (typeof showToast === 'function') showToast(msg, type);
+            return;
+        }
         ph.innerHTML = `
             <div class="alert alert-${escapeHtml(type)} alert-dismissible fade show" role="alert">
                 <i class="bi bi-exclamation-triangle-fill me-2"></i><span class="alert-msg"></span>

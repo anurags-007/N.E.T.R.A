@@ -1,15 +1,20 @@
 from fastapi import APIRouter, Depends, HTTPException, File, UploadFile
 from starlette.concurrency import run_in_threadpool
 from backend.routers.auth import get_current_active_user
-from backend import models
+from backend import config, models
+from backend.utils.validation import read_upload_with_limit, validate_file_magic_and_zip
 
 import csv
 import io
 import ipaddress
+import logging
 import os
 import re
 import socket
 import requests
+
+logger = logging.getLogger(__name__)
+MAX_TOWER_DUMP_FILES = 10
 
 router = APIRouter(
     prefix="/tools",
@@ -122,6 +127,9 @@ def ip_lookup(
             target_ip = socket.gethostbyname(query)
         except socket.gaierror:
             raise HTTPException(status_code=400, detail="Invalid Domain Name or IP address")
+        resolved_obj = ipaddress.ip_address(target_ip)
+        if resolved_obj.is_private or resolved_obj.is_loopback or resolved_obj.is_link_local or resolved_obj.is_reserved or resolved_obj.is_multicast:
+            raise HTTPException(status_code=400, detail="Domain resolves to a restricted internal/private IP address")
 
     # 1. Offline GeoLite2 Lookup (Preferred - zero external HTTP leakage)
     if os.path.exists(GEOLITE_CITY_PATH) or os.path.exists(GEOLITE_ASN_PATH):
@@ -208,10 +216,20 @@ async def analyze_tower_dump(
     """
     if len(files) < 2:
         raise HTTPException(status_code=400, detail="Please upload at least 2 files to compare.")
+    if len(files) > MAX_TOWER_DUMP_FILES:
+        raise HTTPException(status_code=400, detail=f"Too many files. Maximum allowed: {MAX_TOWER_DUMP_FILES}.")
 
     payloads = []
     for file in files:
-        payloads.append((file.filename or "", await file.read()))
+        orig_name = file.filename or ""
+        ext = os.path.splitext(orig_name)[1].lower()
+        if ext not in (".csv", ".xls", ".xlsx"):
+            raise HTTPException(status_code=400, detail="Invalid file type. Only .csv, .xls, and .xlsx are supported.")
+        content = await read_upload_with_limit(file, config.MAX_FILE_SIZE_BYTES)
+        is_safe, safety_err = validate_file_magic_and_zip(content, ext)
+        if not is_safe:
+            raise HTTPException(status_code=400, detail=safety_err)
+        payloads.append((orig_name, content))
 
     def _run_intersection() -> dict:
         common_mobile = set()
@@ -271,5 +289,6 @@ async def analyze_tower_dump(
 
     try:
         return await run_in_threadpool(_run_intersection)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Analysis Failed: {str(e)}")
+    except Exception:
+        logger.exception("Tower dump analysis failed")
+        raise HTTPException(status_code=500, detail="Tower dump analysis failed due to an internal processing error.")

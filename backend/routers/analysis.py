@@ -702,8 +702,9 @@ async def file_based_search(
                     for match in result['matches']:
                         match['searched_identifier'] = mobile
                         all_results.append(match)
-            except:
-                pass
+            except Exception as exc:
+                import logging
+                logging.getLogger(__name__).warning("file-search mobile lookup error: %s", exc)
         
         for upi in extracted_data['upi_ids']:
             try:
@@ -712,8 +713,9 @@ async def file_based_search(
                     for match in result['matches']:
                         match['searched_identifier'] = upi
                         all_results.append(match)
-            except:
-                pass
+            except Exception as exc:
+                import logging
+                logging.getLogger(__name__).warning("file-search upi lookup error: %s", exc)
         
         for account in extracted_data['account_numbers']:
             try:
@@ -722,8 +724,9 @@ async def file_based_search(
                     for match in result['matches']:
                         match['searched_identifier'] = account
                         all_results.append(match)
-            except:
-                pass
+            except Exception as exc:
+                import logging
+                logging.getLogger(__name__).warning("file-search account lookup error: %s", exc)
         
         # Remove duplicates
         unique_results = []

@@ -70,3 +70,10 @@ MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 
 # CORS
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:8001,http://127.0.0.1:8001").split(",")
+
+# Trusted Reverse Proxies (only trust X-Forwarded-For from these client IPs)
+TRUSTED_PROXIES = {
+    ip.strip()
+    for ip in os.getenv("TRUSTED_PROXIES", "127.0.0.1,::1").split(",")
+    if ip.strip()
+}

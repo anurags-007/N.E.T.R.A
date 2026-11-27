@@ -1,5 +1,5 @@
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import func
 
@@ -68,8 +68,8 @@ def create_npci_request(
 
 @router.get("/requests/", response_model=List[schemas.NPCIRequestResponse])
 def get_npci_requests(
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user)
 ):
@@ -117,6 +117,8 @@ def approve_npci_request(
     if not request:
         raise HTTPException(status_code=404, detail="NPCI request not found")
     authorize_case_access(request.case_id, current_user, db)
+    if request.status != models.RequestStatus.PENDING:
+        raise HTTPException(status_code=400, detail=f"Cannot approve NPCI request in '{request.status.value}' state")
     
     request.status = models.RequestStatus.APPROVED
     request.reviewer_id = current_user.id
@@ -154,6 +156,8 @@ def reject_npci_request(
     if not request:
         raise HTTPException(status_code=404, detail="NPCI request not found")
     authorize_case_access(request.case_id, current_user, db)
+    if request.status != models.RequestStatus.PENDING:
+        raise HTTPException(status_code=400, detail=f"Cannot reject NPCI request in '{request.status.value}' state")
     
     request.status = models.RequestStatus.REJECTED
     request.reviewer_id = current_user.id
@@ -162,11 +166,18 @@ def reject_npci_request(
     
     db.commit()
     db.refresh(request)
+    record_audit_log(
+        db,
+        user_id=current_user.id,
+        action=f"Rejected NPCI request #{request_id}",
+        details=f"UPI ID: {request.upi_id}, Reason: {reason[:200]}",
+        commit=True,
+    )
     
     return request
 
 @router.get("/nodal/email")
-def get_npci_nodal_contact():
+def get_npci_nodal_contact(current_user: models.User = Depends(get_current_active_user)):
     """Get NPCI nodal officer contact"""
     email = get_upi_nodal_email()
     return {"organization": "NPCI", "nodal_email": email}

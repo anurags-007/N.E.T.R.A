@@ -14,7 +14,7 @@ from backend.utils.audit import record_audit_log
 from backend.utils.cdr_indexer import index_cdr_bytes
 from backend.utils.pdf_gen import generate_bsa_63_manifest
 from backend.utils.rbac import authorize_case_access
-from backend.utils.validation import sanitize_filename, validate_file_magic_and_zip
+from backend.utils.validation import read_upload_with_limit, sanitize_filename, validate_file_magic_and_zip
 
 from backend import config
 
@@ -68,15 +68,8 @@ async def upload_evidence(
     # Verify Case access (fail-closed jurisdiction check)
     case = authorize_case_access(case_id, current_user, db)
 
-    # Read file content
-    content = await file.read()
-    
-    # Validate file size
-    if len(content) > config.MAX_FILE_SIZE_BYTES:
-        raise HTTPException(
-            status_code=413, 
-            detail=f"File too large. Maximum size: {config.MAX_FILE_SIZE_MB}MB"
-        )
+    # Read file content with streaming size guard
+    content = await read_upload_with_limit(file, config.MAX_FILE_SIZE_BYTES)
 
     # Validate magic bytes & anti-zip-bomb limits
     is_safe, safety_err = validate_file_magic_and_zip(content, file_ext)

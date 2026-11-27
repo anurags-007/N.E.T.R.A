@@ -102,6 +102,13 @@ def verify_financial_entity(
     
     entity.verification_status = "verified"
     db.commit()
+    record_audit_log(
+        db,
+        user_id=current_user.id,
+        action=f"Verified financial entity #{entity_id}",
+        details=f"Case ID: {entity.case_id}, Type: {entity.entity_type}",
+        commit=True,
+    )
     
     return {"status": "verified", "entity_id": entity_id}
 
@@ -126,7 +133,16 @@ def delete_financial_entity(
         raise HTTPException(status_code=404, detail="Financial entity not found")
     authorize_case_access(entity.case_id, current_user, db)
     
+    entity_case_id = entity.case_id
+    entity_type = entity.entity_type
     db.delete(entity)
     db.commit()
+    record_audit_log(
+        db,
+        user_id=current_user.id,
+        action=f"Deleted financial entity #{entity_id}",
+        details=f"Case ID: {entity_case_id}, Type: {entity_type}",
+        commit=True,
+    )
     
     return {"status": "deleted"}

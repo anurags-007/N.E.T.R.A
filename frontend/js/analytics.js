@@ -190,7 +190,7 @@ document.getElementById('globalSearchForm').addEventListener('submit', async (e)
     resDiv.innerHTML = '<div class="text-center py-3"><div class="spinner-border text-light" role="status"></div><p class="mt-2">Searching across all databases...</p></div>';
 
     try {
-        const response = await fetch(`http://localhost:8001/analysis/universal-search?query=${encodeURIComponent(query)}&search_type=${searchType}`, {
+        const response = await fetch(`${API_URL}/analysis/universal-search?query=${encodeURIComponent(query)}&search_type=${encodeURIComponent(searchType)}`, {
             headers: {
                 'Authorization': `Bearer ${token}`
             }
@@ -203,27 +203,27 @@ document.getElementById('globalSearchForm').addEventListener('submit', async (e)
         resDiv.innerHTML = ''; // Clear
 
         if (data.count === 0) {
-            resDiv.innerHTML = `
+            resDiv.innerHTML = safeHTML(`
                 <div class="alert alert-light mt-3 mb-0 text-dark">
-                    <i class="bi bi-info-circle"></i> No records found for "${query}"
+                    <i class="bi bi-info-circle"></i> No records found for "${escapeHtml(query)}"
                     <p class="small mb-0 mt-2 opacity-75">Try searching with a different identifier or check for typos.</p>
                 </div>
-            `;
+            `);
         } else {
             // Results Header
             const header = document.createElement('div');
             header.className = 'alert alert-success mt-3 mb-3';
-            header.innerHTML = `
+            header.innerHTML = safeHTML(`
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
                         <strong><i class="bi bi-check-circle-fill"></i> Match Found!</strong>
-                        <span class="ms-2">${data.count} result(s) for "${query}"</span>
+                        <span class="ms-2">${Number(data.count) || 0} result(s) for "${escapeHtml(query)}"</span>
                     </div>
                     <div>
-                        <span class="badge bg-white text-dark me-1">Search Type: ${data.search_type.toUpperCase()}</span>
+                        <span class="badge bg-white text-dark me-1">Search Type: ${escapeHtml(String(data.search_type || '').toUpperCase())}</span>
                     </div>
                 </div>
-            `;
+            `);
             resDiv.appendChild(header);
 
             // Summary Stats
@@ -281,12 +281,12 @@ document.getElementById('globalSearchForm').addEventListener('submit', async (e)
                     'CDR Evidence Index': 'bi-file-earmark-spreadsheet'
                 };
 
-                groupDiv.innerHTML = `
+                groupDiv.innerHTML = safeHTML(`
                     <h6 class="text-white mb-2">
-                        <i class="bi ${sourceIcons[source] || 'bi-database'}"></i> 
-                        ${source} (${matches.length})
+                        <i class="bi ${escapeHtml(sourceIcons[source] || 'bi-database')}"></i> 
+                        ${escapeHtml(source)} (${matches.length})
                     </h6>
-                `;
+                `);
 
                 const table = document.createElement('div');
                 table.className = 'table-responsive';
@@ -302,28 +302,28 @@ document.getElementById('globalSearchForm').addEventListener('submit', async (e)
                                 <th>Action</th>
                             </tr>
                         </thead>
-                        <tbody id="results-${source.replace(' ', '-')}"></tbody>
+                        <tbody></tbody>
                     </table>
                 `;
 
                 groupDiv.appendChild(table);
                 resultsContainer.appendChild(groupDiv);
 
-                // Populate table
+                // Populate table safely
                 const tbody = table.querySelector('tbody');
                 matches.forEach(match => {
                     const row = document.createElement('tr');
-
                     const statusBadge = match.status === 'active' ? 'success' : 'secondary';
+                    const safeCaseId = encodeURIComponent(String(match.case_id || ''));
 
-                    row.innerHTML = `
-                        <td><strong>${match.fir_number || 'N/A'}</strong></td>
-                        <td><span class="badge bg-info">${match.match_type}</span></td>
+                    row.innerHTML = safeHTML(`
+                        <td><strong>${escapeHtml(match.fir_number || 'N/A')}</strong></td>
+                        <td><span class="badge bg-info">${escapeHtml(match.match_type || '')}</span></td>
                         <td><small>${escapeHtml(match.matched_value || '')}</small></td>
-                        <td>${formatCaseType(match.case_type || 'N/A')}</td>
-                        <td><span class="badge bg-${statusBadge}">${match.status || 'N/A'}</span></td>
-                        <td><a href="case_detail.html?id=${match.case_id}" class="btn btn-sm btn-primary" target="_blank">View Case</a></td>
-                    `;
+                        <td>${escapeHtml(formatCaseType(match.case_type || 'N/A'))}</td>
+                        <td><span class="badge bg-${statusBadge}">${escapeHtml(match.status || 'N/A')}</span></td>
+                        <td><a href="case_detail.html?id=${safeCaseId}" class="btn btn-sm btn-primary" target="_blank" rel="noopener noreferrer">View Case</a></td>
+                    `);
 
                     tbody.appendChild(row);
                 });
@@ -379,7 +379,7 @@ async function getComprehensiveReport(event) {
     resDiv.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-light"></div><p class="mt-3">Generating comprehensive investigation report...</p></div>';
 
     try {
-        const response = await fetch(`http://localhost:8001/analysis/comprehensive-investigation-data?identifier=${encodeURIComponent(query)}`, {
+        const response = await fetch(`${API_URL}/analysis/comprehensive-investigation-data?identifier=${encodeURIComponent(query)}`, {
             headers: {
                 'Authorization': `Bearer ${token}`
             }
@@ -410,14 +410,16 @@ async function getComprehensiveReport(event) {
         // --- NEW: INTELLIGENCE RISK CARD ---
         if (data.risk_profile) {
             const risk = data.risk_profile;
+            const allowedColors = ['danger', 'warning', 'success', 'info', 'primary', 'secondary'];
+            const riskColor = allowedColors.includes(risk.color) ? risk.color : 'secondary';
             const riskCard = document.createElement('div');
-            riskCard.className = `card mb-4 border-start border-5 border-${risk.color} shadow-sm`;
+            riskCard.className = `card mb-4 border-start border-5 border-${riskColor} shadow-sm`;
             // Add a subtle background tint based on risk
-            riskCard.style.background = `linear-gradient(to right, var(--bs-${risk.color}-bg-subtle), #fff)`;
+            riskCard.style.background = `linear-gradient(to right, var(--bs-${riskColor}-bg-subtle), #fff)`;
 
             let tagsHtml = '';
-            risk.tags.forEach(tag => {
-                tagsHtml += `<span class="badge bg-dark me-1 mb-1"><i class="bi bi-tag-fill"></i> ${tag}</span>`;
+            (risk.tags || []).forEach(tag => {
+                tagsHtml += `<span class="badge bg-dark me-1 mb-1"><i class="bi bi-tag-fill"></i> ${escapeHtml(String(tag))}</span>`;
             });
 
             // Action advice based on priority
@@ -430,40 +432,40 @@ async function getComprehensiveReport(event) {
                 actionAdvice = "Recommended: Routine monitoring.";
             }
 
-            riskCard.innerHTML = `
+            riskCard.innerHTML = safeHTML(`
                 <div class="card-body">
                     <div class="row align-items-center">
                         <div class="col-md-3 text-center border-end">
                             <h6 class="text-muted fw-bold mb-2">RISK SCORE</h6>
-                            <h1 class="display-3 fw-bold text-${risk.color} mb-0">${risk.score}</h1>
-                            <span class="badge bg-${risk.color} px-3 py-2 mt-2 rounded-pill">${risk.level}</span>
+                            <h1 class="display-3 fw-bold text-${riskColor} mb-0">${Number(risk.score) || 0}</h1>
+                            <span class="badge bg-${riskColor} px-3 py-2 mt-2 rounded-pill">${escapeHtml(String(risk.level || ''))}</span>
                         </div>
                         <div class="col-md-6 px-4">
-                            <h5 class="fw-bold text-${risk.color} mb-3"><i class="bi bi-exclamation-octagon-fill"></i> ${risk.priority}</h5>
+                            <h5 class="fw-bold text-${riskColor} mb-3"><i class="bi bi-exclamation-octagon-fill"></i> ${escapeHtml(String(risk.priority || ''))}</h5>
                             <div class="mb-3">
                                 ${tagsHtml}
                             </div>
-                            <div class="p-2 bg-white rounded border border-${risk.color}-subtle">
+                            <div class="p-2 bg-white rounded border border-${riskColor}-subtle">
                                 <small class="text-secondary fw-bold"><i class="bi bi-shield-check"></i> SYSTEM ADVICE:</small><br>
-                                <span class="text-dark">${actionAdvice}</span>
+                                <span class="text-dark">${escapeHtml(actionAdvice)}</span>
                             </div>
                         </div>
                         <div class="col-md-3 text-secondary small">
                             <ul class="list-unstyled mb-0">
                                 <li class="mb-2 d-flex justify-content-between">
-                                    <span>Repeat Offense:</span> <strong>${risk.breakdown.repeat_offense_score}%</strong>
+                                    <span>Repeat Offense:</span> <strong>${Number(risk.breakdown?.repeat_offense_score) || 0}%</strong>
                                 </li>
                                 <li class="mb-2 d-flex justify-content-between">
-                                    <span>Money Flow:</span> <strong>${risk.breakdown.money_flow_score}%</strong>
+                                    <span>Money Flow:</span> <strong>${Number(risk.breakdown?.money_flow_score) || 0}%</strong>
                                 </li>
                                 <li class="d-flex justify-content-between">
-                                    <span>Network Link:</span> <strong>${risk.breakdown.network_score}%</strong>
+                                    <span>Network Link:</span> <strong>${Number(risk.breakdown?.network_score) || 0}%</strong>
                                 </li>
                             </ul>
                         </div>
                     </div>
                 </div>
-            `;
+            `);
             resDiv.appendChild(riskCard);
         }
 
@@ -559,14 +561,15 @@ async function getComprehensiveReport(event) {
             const tbody = evidenceCard.querySelector('#evidenceTable');
             data.evidence_files.forEach(e => {
                 const row = document.createElement('tr');
-                row.innerHTML = `
+                row.innerHTML = safeHTML(`
                     <td><i class="bi bi-file-earmark-pdf"></i> ${escapeHtml(e.original_filename)}</td>
                     <td><span class="badge bg-primary">${escapeHtml(e.file_type)}</span></td>
                     <td>${escapeHtml(e.fir_number)}</td>
                     <td>${new Date(e.uploaded_at).toLocaleDateString()}</td>
                     <td><span class="badge bg-success">${escapeHtml(e.verification_status)}</span></td>
-                    <td><a href="/files/download/${e.id}" class="btn btn-sm btn-success" target="_blank"><i class="bi bi-download"></i> Download</a></td>
-                `;
+                    <td><button type="button" class="btn btn-sm btn-success evidence-dl-btn"><i class="bi bi-download"></i> Download</button></td>
+                `);
+                row.querySelector('.evidence-dl-btn').addEventListener('click', () => API.downloadEvidence(token, e.id));
                 tbody.appendChild(row);
             });
         }
@@ -676,7 +679,9 @@ async function visualizeNetwork(event) {
     const container = document.getElementById('networkMapCanvas');
 
     if (!query) {
-        alert('Please enter an identifier first');
+        if (typeof showToast === 'function') {
+            showToast('Please enter an identifier first', 'warning');
+        }
         return;
     }
 
@@ -684,7 +689,7 @@ async function visualizeNetwork(event) {
     container.innerHTML = '<div class="h-100 d-flex flex-column align-items-center justify-content-center text-muted"><div class="spinner-border mb-2"></div><div>Building Intelligence Graph...</div></div>';
 
     try {
-        const response = await fetch(`http://localhost:8001/analysis/network-graph?identifier=${encodeURIComponent(query)}`, {
+        const response = await fetch(`${API_URL}/analysis/network-graph?identifier=${encodeURIComponent(query)}`, {
             headers: {
                 'Authorization': `Bearer ${token}`
             }
@@ -762,7 +767,7 @@ async function visualizeNetwork(event) {
         });
 
     } catch (err) {
-        container.innerHTML = `<div class="alert alert-danger m-3">Error: ${err.message}</div>`;
+        container.innerHTML = `<div class="alert alert-danger m-3">Error: ${escapeHtml(err.message)}</div>`;
     }
 }
 
@@ -784,16 +789,16 @@ document.getElementById('fileSearchForm').addEventListener('submit', async (e) =
     const formData = new FormData();
     formData.append('file', file);
 
-    resDiv.innerHTML = `
+    resDiv.innerHTML = safeHTML(`
         <div class="text-center py-4">
             <div class="spinner-border text-light" role="status"></div>
-            <p class="mt-3">Processing file: ${file.name}...</p>
+            <p class="mt-3">Processing file: ${escapeHtml(file.name)}...</p>
             <small class="opacity-75">Extracting identifiers and searching databases...</small>
         </div>
-    `;
+    `);
 
     try {
-        const response = await fetch('http://localhost:8001/analysis/file-search', {
+        const response = await fetch(`${API_URL}/analysis/file-search`, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${token}`
@@ -813,54 +818,57 @@ document.getElementById('fileSearchForm').addEventListener('submit', async (e) =
         // File Processing Summary
         const summaryCard = document.createElement('div');
         summaryCard.className = 'alert alert-success mt-3 mb-3';
-        summaryCard.innerHTML = `
+        summaryCard.innerHTML = safeHTML(`
             <h6><i class="bi bi-file-check"></i> File Processed Successfully</h6>
             <div class="row g-2 mt-2">
                 <div class="col-md-3">
-                    <strong>Filename:</strong> ${data.filename}
+                    <strong>Filename:</strong> ${escapeHtml(data.filename || '')}
                 </div>
                 <div class="col-md-3">
-                    <strong>Total Identifiers:</strong> ${data.summary.total_identifiers}
+                    <strong>Total Identifiers:</strong> ${Number(data.summary?.total_identifiers) || 0}
                 </div>
                 <div class="col-md-3">
-                    <strong>Matches Found:</strong> <span class="badge bg-danger">${data.summary.total_matches}</span>
+                    <strong>Matches Found:</strong> <span class="badge bg-danger">${Number(data.summary?.total_matches) || 0}</span>
                 </div>
                 <div class="col-md-3">
-                    <strong>File Type:</strong> ${data.file_type.toUpperCase()}
+                    <strong>File Type:</strong> ${escapeHtml(String(data.file_type || '').toUpperCase())}
                 </div>
             </div>
-        `;
+        `);
         resDiv.appendChild(summaryCard);
 
         // Extracted Data Summary
         if (data.extracted_data) {
             const extractedCard = document.createElement('div');
             extractedCard.className = 'card bg-white text-dark mb-3';
-            extractedCard.innerHTML = `
+            const mobList = (data.extracted_data.mobile_numbers || []).slice(0, 3).map(v => escapeHtml(String(v))).join(', ');
+            const upiList = (data.extracted_data.upi_ids || []).slice(0, 3).map(v => escapeHtml(String(v))).join(', ');
+            const accList = (data.extracted_data.account_numbers || []).slice(0, 3).map(v => escapeHtml(String(v))).join(', ');
+            extractedCard.innerHTML = safeHTML(`
                 <div class="card-body">
                     <h6 class="card-title"><i class="bi bi-list-check"></i> Extracted Identifiers</h6>
                     <div class="row g-2">
                         <div class="col-md-4">
                             <div class="p-2 bg-light rounded">
                                 <strong>📱 Mobile Numbers:</strong> ${data.extracted_data.mobile_numbers.length}
-                                ${data.extracted_data.mobile_numbers.length > 0 ? '<br><small class="text-muted">' + data.extracted_data.mobile_numbers.slice(0, 3).join(', ') + (data.extracted_data.mobile_numbers.length > 3 ? '...' : '') + '</small>' : ''}
+                                ${data.extracted_data.mobile_numbers.length > 0 ? '<br><small class="text-muted">' + mobList + (data.extracted_data.mobile_numbers.length > 3 ? '...' : '') + '</small>' : ''}
                             </div>
                         </div>
                         <div class="col-md-4">
                             <div class="p-2 bg-light rounded">
                                 <strong>💸 UPI IDs:</strong> ${data.extracted_data.upi_ids.length}
-                                ${data.extracted_data.upi_ids.length > 0 ? '<br><small class="text-muted">' + data.extracted_data.upi_ids.slice(0, 3).join(', ') + (data.extracted_data.upi_ids.length > 3 ? '...' : '') + '</small>' : ''}
+                                ${data.extracted_data.upi_ids.length > 0 ? '<br><small class="text-muted">' + upiList + (data.extracted_data.upi_ids.length > 3 ? '...' : '') + '</small>' : ''}
                             </div>
                         </div>
                         <div class="col-md-4">
                             <div class="p-2 bg-light rounded">
                                 <strong>🏦 Accounts:</strong> ${data.extracted_data.account_numbers.length}
-                                ${data.extracted_data.account_numbers.length > 0 ? '<br><small class="text-muted">' + data.extracted_data.account_numbers.slice(0, 3).join(', ') + (data.extracted_data.account_numbers.length > 3 ? '...' : '') + '</small>' : ''}
+                                ${data.extracted_data.account_numbers.length > 0 ? '<br><small class="text-muted">' + accList + (data.extracted_data.account_numbers.length > 3 ? '...' : '') + '</small>' : ''}
                             </div>
                         </div>
                     </div>
                 </div>
-            `;
+            `);
             resDiv.appendChild(extractedCard);
         }
 
@@ -896,9 +904,9 @@ document.getElementById('fileSearchForm').addEventListener('submit', async (e) =
             for (const [identifier, matches] of Object.entries(grouped)) {
                 const groupCard = document.createElement('div');
                 groupCard.className = 'card bg-white text-dark mb-3';
-                groupCard.innerHTML = `
+                groupCard.innerHTML = safeHTML(`
                     <div class="card-header bg-danger text-white">
-                        <strong>⚠️ Alert:</strong> Identifier "${identifier}" found in ${matches.length} case(s)
+                        <strong>⚠️ Alert:</strong> Identifier "${escapeHtml(identifier)}" found in ${matches.length} case(s)
                     </div>
                     <div class="card-body">
                         <table class="table table-sm table-striped">
@@ -912,25 +920,26 @@ document.getElementById('fileSearchForm').addEventListener('submit', async (e) =
                                     <th>Action</th>
                                 </tr>
                             </thead>
-                            <tbody id="matches-${identifier.replace(/[^a-zA-Z0-9]/g, '_')}"></tbody>
+                            <tbody></tbody>
                         </table>
                     </div>
-                `;
+                `);
                 resDiv.appendChild(groupCard);
 
                 const tbody = groupCard.querySelector('tbody');
                 matches.forEach(match => {
                     const row = document.createElement('tr');
                     const statusBadge = match.status === 'active' ? 'success' : 'secondary';
+                    const safeCaseId = encodeURIComponent(String(match.case_id || ''));
 
-                    row.innerHTML = `
-                        <td><strong>${match.fir_number || 'N/A'}</strong></td>
-                        <td><span class="badge bg-info">${match.source}</span></td>
-                        <td>${match.match_type}</td>
-                        <td>${formatCaseType(match.case_type || 'N/A')}</td>
-                        <td><span class="badge bg-${statusBadge}">${match.status || 'N/A'}</span></td>
-                        <td><a href="case_detail.html?id=${match.case_id}" class="btn btn-sm btn-primary" target="_blank">View</a></td>
-                    `;
+                    row.innerHTML = safeHTML(`
+                        <td><strong>${escapeHtml(match.fir_number || 'N/A')}</strong></td>
+                        <td><span class="badge bg-info">${escapeHtml(match.source || '')}</span></td>
+                        <td>${escapeHtml(match.match_type || '')}</td>
+                        <td>${escapeHtml(formatCaseType(match.case_type || 'N/A'))}</td>
+                        <td><span class="badge bg-${statusBadge}">${escapeHtml(match.status || 'N/A')}</span></td>
+                        <td><a href="case_detail.html?id=${safeCaseId}" class="btn btn-sm btn-primary" target="_blank" rel="noopener noreferrer">View</a></td>
+                    `);
                     tbody.appendChild(row);
                 });
             }
@@ -951,12 +960,20 @@ document.getElementById('fileSearchForm').addEventListener('submit', async (e) =
 
 function showAlert(type, msg) {
     const ph = document.getElementById('alertPlaceholder');
-    ph.innerHTML = `
-        <div class="alert alert-${type} alert-dismissible fade show" role="alert">
-            ${msg}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-    `;
+    if (!ph) return;
+    const allowed = ['primary', 'secondary', 'success', 'danger', 'warning', 'info', 'light', 'dark'];
+    const safeType = allowed.includes(type) ? type : 'info';
+    ph.innerHTML = '';
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert alert-${safeType} alert-dismissible fade show`;
+    alertDiv.setAttribute('role', 'alert');
+    alertDiv.appendChild(document.createTextNode(String(msg ?? '')));
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'btn-close';
+    closeBtn.setAttribute('data-bs-dismiss', 'alert');
+    alertDiv.appendChild(closeBtn);
+    ph.appendChild(alertDiv);
 }
 
 // ========== FINANCIAL FRAUD MODULE: Dashboard Logic ==========
@@ -967,7 +984,7 @@ async function loadFinancialDashboard() {
 
     try {
         // Fetch financial fraud dashboard metrics
-        const response = await fetch('http://localhost:8001/analytics/financial-dashboard', {
+        const response = await fetch(`${API_URL}/analytics/financial-dashboard`, {
             headers: {
                 'Authorization': `Bearer ${token}`
             }
@@ -1019,7 +1036,7 @@ async function loadFinancialDashboard() {
 
 async function loadRepeatEntities() {
     try {
-        const response = await fetch('http://localhost:8001/analytics/repeat-entities', {
+        const response = await fetch(`${API_URL}/analytics/repeat-entities`, {
             headers: {
                 'Authorization': `Bearer ${token}`
             }
@@ -1039,26 +1056,27 @@ async function loadRepeatEntities() {
         if (data.total_repeat_entities === 0) {
             alertsDiv.innerHTML = '<p class="text-muted">No repeat fraud entities detected</p>';
         } else {
-            alertsDiv.innerHTML = `
+            alertsDiv.innerHTML = safeHTML(`
                 <div class="alert alert-warning">
-                    <strong>⚠️ ${data.total_repeat_entities} Repeat Entity(ies) Detected</strong>
+                    <strong>⚠️ ${Number(data.total_repeat_entities) || 0} Repeat Entity(ies) Detected</strong>
                 </div>
-            `;
+            `);
 
             data.alerts.forEach(alert => {
                 const alertBadge = alert.alert_level === 'HIGH' ? 'danger' : 'warning';
-                alertsDiv.innerHTML += `
-                    <div class="card-custom p-3 mb-2">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <div>
-                                <span class="badge bg-${alertBadge}">${alert.alert_level}</span>
-                                <strong class="ms-2">${alert.type}</strong>: ${alert.identifier}
-                            </div>
-                            <span class="badge bg-secondary">${alert.linked_cases_count} cases</span>
+                const card = document.createElement('div');
+                card.className = 'card-custom p-3 mb-2';
+                card.innerHTML = safeHTML(`
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <span class="badge bg-${alertBadge}">${escapeHtml(String(alert.alert_level || ''))}</span>
+                            <strong class="ms-2">${escapeHtml(String(alert.type || ''))}</strong>: ${escapeHtml(String(alert.identifier || ''))}
                         </div>
-                        <small class="text-muted d-block mt-2">Linked FIRs: ${alert.fir_numbers.join(', ')}</small>
+                        <span class="badge bg-secondary">${Number(alert.linked_cases_count) || 0} cases</span>
                     </div>
-                `;
+                    <small class="text-muted d-block mt-2">Linked FIRs: ${(alert.fir_numbers || []).map(f => escapeHtml(String(f))).join(', ')}</small>
+                `);
+                alertsDiv.appendChild(card);
             });
         }
 

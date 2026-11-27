@@ -1,10 +1,11 @@
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
 from backend import models, schemas
 from backend.routers.auth import get_current_active_user
+from backend.utils.audit import record_audit_log
 from backend.utils.rbac import apply_jurisdiction_filter, authorize_case_access, GLOBAL_ROLES
 
 router = APIRouter(
@@ -60,12 +61,19 @@ def create_case(
     db.add(new_case)
     db.commit()
     db.refresh(new_case)
+    record_audit_log(
+        db,
+        user_id=current_user.id,
+        action="CREATE_CASE",
+        details=f"Created case {new_case.fir_number} at {new_case.police_station}",
+        commit=True,
+    )
     return new_case
 
 @router.get("/", response_model=List[schemas.CaseResponse])
 def read_cases(
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user)
 ):
@@ -94,7 +102,15 @@ def update_case_status(
         
     case = authorize_case_access(case_id, current_user, db)
     
+    old_status = case.status
     case.status = status_update.status
     db.commit()
     db.refresh(case)
+    record_audit_log(
+        db,
+        user_id=current_user.id,
+        action="UPDATE_CASE_STATUS",
+        details=f"Case {case.fir_number}: {old_status} -> {case.status}",
+        commit=True,
+    )
     return case
