@@ -2,6 +2,12 @@
 
 **N.E.T.R.A.** is a hardened cybercrime investigation, telecom requisitioning, and financial fraud intelligence platform built for Indian law enforcement operations. It combines hierarchical police RBAC, `MultiFernet`-encrypted evidence storage, Indian statutory workflows (**BNSS 2023** & **BSA 2023**), offline IP/cell-tower geolocation, and real-time fraud correlation.
 
+## Live Deployment
+
+- **Live Portal:** [https://netra-cyber-portal.onrender.com/frontend/index.html](https://netra-cyber-portal.onrender.com/frontend/index.html)
+- **Cloud Stack:** Render Web Service (`netra-cyber-portal`) + Neon Serverless PostgreSQL 16 (`netra-db`)
+- **Note:** Hosted on Render's free tier — the first request after ~15 minutes of inactivity may take ~50s to cold-start.
+
 ---
 
 ## Architecture Overview
